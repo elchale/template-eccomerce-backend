@@ -97,6 +97,16 @@ class AddToCartSerializer(serializers.Serializer):
         return data
 
 
+class MergeCartItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    variant_id = serializers.IntegerField(required=False, allow_null=True)
+    quantity = serializers.IntegerField(min_value=1)
+
+
+class MergeCartSerializer(serializers.Serializer):
+    items = MergeCartItemSerializer(many=True)
+
+
 class UpdateCartItemSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1)
 

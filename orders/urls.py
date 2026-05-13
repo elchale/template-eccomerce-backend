@@ -4,6 +4,7 @@ from orders.views.cart import (
     AddToCartView,
     CartView,
     ClearCartView,
+    MergeCartView,
     RemoveCartItemView,
     UpdateCartItemView,
 )
@@ -25,6 +26,7 @@ urlpatterns = [
     path('api/cart/items/<int:pk>/', UpdateCartItemView.as_view(), name='cart-update-item'),
     path('api/cart/items/<int:pk>/delete/', RemoveCartItemView.as_view(), name='cart-remove-item'),
     path('api/cart/clear/', ClearCartView.as_view(), name='cart-clear'),
+    path('api/cart/merge/', MergeCartView.as_view(), name='cart-merge'),
 
     # Checkout
     path('api/checkout/', CheckoutView.as_view(), name='checkout'),

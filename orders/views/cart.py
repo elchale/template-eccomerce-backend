@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,6 +8,7 @@ from orders.models import Cart, CartItem
 from orders.serializers.cart import (
     AddToCartSerializer,
     CartSerializer,
+    MergeCartSerializer,
     UpdateCartItemSerializer,
 )
 from products.models import Product, ProductVariant
@@ -131,6 +133,63 @@ class RemoveCartItemView(APIView):
         cart = _get_cart_with_prefetch(cart)
         cart_serializer = CartSerializer(cart)
         return Response(cart_serializer.data)
+
+
+class MergeCartView(APIView):
+    """POST - Merge a list of guest-cart items into the authenticated user's cart.
+
+    The frontend keeps a guest cart in localStorage while the user is logged
+    out; on login it ships the items here so they survive the session
+    transition. For each item we sum with any existing cart row of the same
+    (product, variant) pair, then clamp to available stock. Unknown or
+    inactive products/variants are silently skipped — a stale guest cart must
+    never block a successful login.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = MergeCartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        items = serializer.validated_data['items']
+
+        with transaction.atomic():
+            cart, _ = Cart.objects.select_for_update().get_or_create(user=request.user)
+
+            for item in items:
+                try:
+                    product = Product.objects.get(pk=item['product_id'], is_active=True)
+                except Product.DoesNotExist:
+                    continue
+
+                variant = None
+                variant_id = item.get('variant_id')
+                if variant_id:
+                    try:
+                        variant = ProductVariant.objects.get(
+                            pk=variant_id,
+                            product=product,
+                            is_active=True,
+                        )
+                    except ProductVariant.DoesNotExist:
+                        continue
+
+                available = variant.stock if variant else product.stock
+                if available <= 0:
+                    continue
+
+                cart_item, created = CartItem.objects.get_or_create(
+                    cart=cart,
+                    product=product,
+                    variant=variant,
+                    defaults={'quantity': min(item['quantity'], available)},
+                )
+                if not created:
+                    cart_item.quantity = min(cart_item.quantity + item['quantity'], available)
+                    cart_item.save(update_fields=['quantity', 'updated'])
+
+        cart = _get_cart_with_prefetch(cart)
+        return Response(CartSerializer(cart).data)
 
 
 class ClearCartView(APIView):
