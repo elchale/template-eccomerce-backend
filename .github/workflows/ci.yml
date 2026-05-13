@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Cancel in-flight runs on the same branch when a new push lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check .
+
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: ecommerce_test
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SECRET_KEY: ci-secret-key-not-for-production
+      DEBUG: "True"
+      DB_NAME: ecommerce_test
+      DB_USER: ecommerce
+      DB_PASS: ecommerce
+      DB_HOST: localhost
+      DB_PORT: 5432
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_PASS: ""
+      USE_CELERY: "False"
+      SENTRY_DSN: ""
+      GCS_BUCKET_NAME: test-bucket
+      GCS_PROJECT_ID: test-project
+      GCS_CREDENTIALS_PATH: ""
+      ADMIN_USER: admin@test.com
+      ADMIN_MASTERPASS: testpass
+      DEFAULT_FROM_EMAIL: noreply@test.com
+      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+      EMAIL_HOST: localhost
+      EMAIL_HOST_USER: ""
+      EMAIL_HOST_PASSWORD: ""
+      EMAIL_PORT: 587
+      EMAIL_USE_TLS: "True"
+      DOMAIN: localhost
+      FRONTEND_DOMAIN: http://localhost:5174
+      IZIPAY_SHOP_ID: ""
+      IZIPAY_MODE: TEST
+      IZIPAY_API_KEY_TEST: ""
+      IZIPAY_HMAC_KEY_TEST: ""
+      AMQP_HOST: localhost
+      AMQP_PORT: 5672
+      AMQP_USER: guest
+      AMQP_PASS: guest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Django check
+        run: python manage.py check
+
+      - name: Migrate
+        run: python manage.py migrate --no-input
+
+      - name: pytest
+        run: pytest --tb=short -q
+
+  security:
+    name: Bandit + pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Security audits are informational. Transient CVE advisories shouldn't
+    # block PRs — surface them in the UI so the team sees them, but don't fail
+    # the workflow. Apply the same policy used by the frontend audit job.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install bandit pip-audit
+      - name: Bandit (medium+)
+        run: bandit -r . -x ./venv,./tests,./.claude --severity-level medium -q
+      - name: pip-audit
+        run: pip-audit -r requirements.txt || true

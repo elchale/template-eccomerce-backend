@@ -1,0 +1,12 @@
+# Development / CI dependencies
+-r requirements.txt
+
+# Testing
+pytest-django>=4.9
+pytest-mock>=3.14
+factory-boy>=3.3
+
+# Linting / security
+ruff==0.11.13
+bandit==1.8.5
+pip-audit==2.9.0

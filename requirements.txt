@@ -1,0 +1,114 @@
+# Python 3.13.7
+
+# Core
+Django==5.2.5
+django-environ==0.12.0
+asgiref==3.9.1
+sqlparse==0.5.3
+tzdata==2025.2
+
+# REST API
+djangorestframework==3.16.1
+django-filter==25.1
+django-otp==1.6.1
+django-admin-tools==0.9.3
+django-admin-rangefilter==0.13.3
+pyotp==2.9.0
+
+# JWT Auth
+djangorestframework_simplejwt==5.5.1
+PyJWT==2.10.1
+
+# Auth helpers (login/registration endpoints suite)
+dj-rest-auth==7.0.1
+django-allauth==65.11.0
+
+# Social login token verification (cryptography required by allauth Google JWT)
+cryptography==44.0.3
+google-auth==2.40.3
+requests==2.32.5
+cachetools==5.5.2
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+rsa==4.9.1
+urllib3==2.5.0
+certifi==2025.8.3
+charset-normalizer==3.4.3
+idna==3.10
+
+# CORS
+django-cors-headers==4.7.0
+
+# API schema/docs
+drf-spectacular==0.28.0
+attrs==25.3.0
+inflection==0.5.1
+jsonschema==4.25.1
+jsonschema-specifications==2025.4.1
+packaging==25.0
+referencing==0.36.2
+rpds-py==0.27.0
+uritemplate==4.2.0
+PyYAML==6.0.2
+
+# Task queue (optional; enable when you wire Celery)
+celery==5.5.3
+kombu==5.5.4
+django_celery_results==2.6.0
+amqp==5.3.1
+billiard==4.2.1
+click==8.2.1
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+prompt_toolkit==3.0.51
+python-dateutil==2.9.0.post0
+vine==5.1.0
+wcwidth==0.2.13
+colorama==0.4.6
+six==1.17.0
+typing_extensions==4.14.1
+
+# Caching / Redis (optional)
+django-redis==6.0.0
+redis==6.4.0
+
+# WebSockets / Channels (optional)
+channels==4.3.1
+channels_redis==4.3.0
+msgpack==1.1.1
+
+# Monitoring (optional)
+sentry-sdk==2.35.0
+
+# Useful extras used by Nemo (optional)
+django-user-agents==0.4.0
+django-countries==7.6.1
+ua-parser==1.0.1
+ua-parser-builtins==0.18.0.post1
+user-agents==2.2.0
+
+# Database driver (PostgreSQL)
+psycopg2-binary==2.9.10
+
+# ASGI/WSGI server for Render
+gunicorn==23.0.0
+uvicorn==0.35.0
+h11==0.16.0
+
+# Google Cloud Storage
+google-cloud-storage==3.3.0
+
+# Utils
+django-ipware==7.0.1
+python-ipware==3.0.0
+fuzzywuzzy==0.18.0
+qrcode==8.2
+whitenoise==6.9.0
+django-modeltranslation>=0.19
+# Observability
+python-json-logger==3.3.0
+django-log-request-id==2.1.0
+
+# Image processing
+Pillow==11.3.0

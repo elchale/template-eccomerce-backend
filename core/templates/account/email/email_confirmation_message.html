@@ -1,0 +1,33 @@
+{% extends 'base_layout.html' %}
+{% block content %}
+{% load account %}{% user_display user as user_display %}{% load i18n %}
+{% autoescape off %}
+{% blocktrans with site_name=current_site.name site_domain=current_site.domain %}
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; font-weight: 600; margin: 0; margin-bottom: 14px;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">¡Empecemos {{ user_display }}!</span></span>
+</p>
+
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 15px; font-weight: normal; margin: 0; margin-bottom: 14px;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Bienvenido a <strong style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Test</strong>.</span></span>
+</p>
+
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 15px; font-weight: normal; margin: 0; margin-bottom: 14px;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Usa el siguiente código para iniciar tu aventura con nosotros:</span></span>
+</p>
+
+<div style="text-align: center; margin: 18px 0; padding: 14px; background: #f5f7fa; border: 1px solid #e6e8ec; border-radius: 8px;">
+    <span class="gmail-blend-difference"><span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 24px; font-weight: 700; letter-spacing: 1px; color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">{{ key }}</span></span>
+</div>
+
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; font-weight: 600; margin: 0; margin-bottom: 10px;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Recuerda:</span></span>
+</p>
+
+<ul style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 0; padding-left: 20px;">
+    <li><span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Este código será válido por 10 minutos</span></span></li>
+    <li><span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Evita compartirlo con nadie</span></span></li>
+    <li><span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Haz clic y selecciona el código para copiarlo manualmente</span></span></li>
+</ul>
+{% endblocktrans %}
+{% endautoescape %}
+{% endblock %}

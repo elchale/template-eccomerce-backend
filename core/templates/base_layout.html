@@ -1,0 +1,305 @@
+<!doctype html>
+{% block subject %}{% endblock %}
+<html>
+<head>
+    <meta name="viewport" content="width=device-width">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>{% block email_title %}Email{% endblock %}</title>
+    <style>
+        /* ===== THEME VARIABLES ===== */
+        /* CSS variables commented out for email client compatibility
+        :root {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #111111;
+            --bg-card: #1a1a1a;
+            --accent-primary: #007aff;
+            --accent-secondary: #ff6b35;
+            --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --text-muted: #999999;
+            --text-white: #ffffff;
+            --border-light: #333333;
+            --shadow-primary: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --font-primary: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            --radius: 12px;
+        }
+        */
+
+        /* ===== BASE RESET ===== */
+        * { box-sizing: border-box; }
+        body {
+            background: linear-gradient(to right, #fdfffb, #fdfffb) !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            color: #000000;
+        }
+        table { border-collapse: separate; mso-table-lspace: 0pt; mso-table-rspace: 0pt; width: 100%; }
+        td { font-family: inherit; vertical-align: top; }
+        img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+        a { color: #2a4f5a; text-decoration: none; }
+
+        /* ===== LAYOUT ===== */
+        .email-container {
+            background: linear-gradient(to right, #f5f7fa, #f5f7fa) !important;
+            padding: 40px 20px;
+        }
+
+        /* Outer wrapper with gradient border effect */
+        .email-border-wrapper {
+            max-width: 642px;
+            margin: 0 auto;
+            background: linear-gradient(to right, #ffffff, #ffffff) !important;
+            background-color: #ffffff !important;
+            border-radius: 13px;
+            padding: 0;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e6e8ec;
+        }
+        
+        .email-wrapper {
+            max-width: 640px;
+            margin: 0 auto;
+            background: linear-gradient(to right, #ffffff, #ffffff) !important;
+            background-color: #ffffff !important;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            background: linear-gradient(to right, #ffffff, #ffffff) !important;
+            padding: 60px 40px 0;
+            text-align: center;
+            position: relative;
+        }
+
+        .logo {
+            width: 100px;
+            height: auto;
+            filter: none;
+        }
+
+        /* ===== CONTENT AREA ===== */
+        .content {
+            padding: 50px 40px;
+            background: linear-gradient(to right, #ffffff, #ffffff) !important;
+            color: #000000;
+            line-height: 1.7;
+        }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            background: linear-gradient(to right, #ffffff, #ffffff) !important;
+            padding: 0 40px 40px;
+            text-align: center;
+        }
+
+        .social-links-wrapper {
+            margin: 30px 0;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            text-align: center;
+        }
+        .social-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(to right, #ffffff, #ffffff) !important;
+            margin: 0 10px 10px 10px;
+            border-radius: 50%;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e6e8ec;
+        }
+
+        .social-link:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+            border-color: #2a4f5a;
+        }
+
+        .social-icon {
+            width: 22px;
+            height: 22px;
+            fill: #a0a0a0;
+            transition: all 0.2s ease;
+        }
+        .footer-text {
+            color: #4a5568;
+            font-size: 15px;
+            margin: 12px 0;
+            font-weight: 400;
+        }
+        .support-link {
+            color: #2a4f5a;
+            font-weight: 600;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s ease;
+            display: inline-block;
+        }
+        .support-link:hover {
+            border-bottom-color: #2a4f5a;
+        }
+
+        .gmail-blend-difference {
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important;
+        }
+
+        .gmail-keep-white-screen {
+            background: #000000;
+            mix-blend-mode: screen;
+        }
+
+        .gmail-keep-white-difference {
+            background: #000000;
+            mix-blend-mode: difference;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body, p, span, strong, li, a, h1, h2, h3, h4, h5, h6 {
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
+            }
+
+            .gmail-keep-white-screen,
+            .gmail-keep-white-screen *,
+            .gmail-keep-white-difference,
+            .gmail-keep-white-difference * {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+
+            [data-ogsc] body,
+            [data-ogsc] p,
+            [data-ogsc] span,
+            [data-ogsc] strong,
+            [data-ogsc] li {
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
+            }
+
+            [data-ogsc] .gmail-keep-white-screen,
+            [data-ogsc] .gmail-keep-white-screen *,
+            [data-ogsc] .gmail-keep-white-difference,
+            [data-ogsc] .gmail-keep-white-difference * {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+        }
+
+        @media only screen and (max-width: 620px) {
+            u+.darkmode .gmail-blend-difference {
+                mix-blend-mode: difference;
+            }
+
+            u+.darkmode .gmail-keep-white-screen {
+                background: #000;
+                mix-blend-mode: screen;
+            }
+
+            u+.darkmode .gmail-keep-white-difference {
+                background: #000;
+                mix-blend-mode: difference;
+            }
+        }
+    </style>
+</head>
+
+<body class="darkmode">
+    {% load env_tags %}
+    {% load site_config %}
+    {% site_config 'site_logo_url' as site_logo_url %}
+    {% site_config 'site_name' as site_name %}
+    {% site_config 'contact_email' as contact_email %}
+    {% site_config 'social_facebook' as social_facebook %}
+    {% site_config 'social_instagram' as social_instagram %}
+    {% site_config 'social_tiktok' as social_tiktok %}
+    {% site_config 'social_linkedin' as social_linkedin %}
+    {% site_config 'social_website' as social_website %}
+    <div class="email-container">
+        <div class="email-border-wrapper">
+            <div class="email-wrapper">
+                <!-- HEADER -->
+                <div class="header">
+                    {% if site_logo_url %}
+                        <img src="{{ site_logo_url }}" alt="{% if site_name %}{{ site_name }}{% else %}{% get_env_tags 'BRAND' %}{% endif %}" class="logo">
+                    {% else %}
+                        <p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 22px; font-weight: 700; margin: 0;">
+                            <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">{% if site_name %}{{ site_name }}{% else %}{% get_env_tags 'BRAND' %}{% endif %}</span></span>
+                        </p>
+                    {% endif %}
+                </div>
+
+                <!-- MAIN CONTENT -->
+                <div class="content">
+                    {% block preheader %}{% endblock %}
+    {% block content %}{% endblock %}
+                </div>
+
+                <!-- FOOTER -->
+                <div class="footer">
+                    {% if contact_email %}
+                    <p class="footer-text">
+                        ¿Necesitas ayuda? Escribe a nuestro <a href="mailto:{{ contact_email }}" class="support-link">equipo de soporte</a>
+                    </p>
+                    {% endif %}
+
+                    {% if social_facebook or social_instagram or social_tiktok or social_linkedin or social_website %}
+                    <div class="social-links-wrapper" style="margin: 30px 0; text-align: center;">
+                        <div style="width: 100%; max-width: 320px; margin: 0 auto; text-align: center;">
+                            {% if social_facebook %}
+                            <a href="{{ social_facebook }}" target="_blank" style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(to right, #ffffff, #ffffff) !important; background-color: #ffffff !important; margin: 0 10px 10px 10px; border-radius: 50%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08); border: 1px solid #e6e8ec; text-align: center; line-height: 0; text-decoration: none; padding: 12px;">
+                                <img src="https://img.icons8.com/?size=100&id=118467&format=png&color=000000" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle;">
+                            </a>
+                            {% endif %}
+
+                            {% if social_instagram %}
+                            <a href="{{ social_instagram }}" target="_blank" style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(to right, #ffffff, #ffffff) !important; background-color: #ffffff !important; margin: 0 10px 10px 10px; border-radius: 50%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08); border: 1px solid #e6e8ec; text-align: center; line-height: 0; text-decoration: none; padding: 12px;">
+                                <img src="https://img.icons8.com/?size=100&id=32309&format=png&color=000000" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle;">
+                            </a>
+                            {% endif %}
+
+                            {% if social_tiktok %}
+                            <a href="{{ social_tiktok }}" target="_blank" style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(to right, #ffffff, #ffffff) !important; background-color: #ffffff !important; margin: 0 10px 10px 10px; border-radius: 50%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08); border: 1px solid #e6e8ec; text-align: center; line-height: 0; text-decoration: none; padding: 12px;">
+                                <img src="https://img.icons8.com/?size=100&id=118640&format=png&color=000000" alt="TikTok" style="width: 24px; height: 24px; vertical-align: middle;">
+                            </a>
+                            {% endif %}
+
+                            {% if social_linkedin %}
+                            <a href="{{ social_linkedin }}" target="_blank" style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(to right, #ffffff, #ffffff) !important; background-color: #ffffff !important; margin: 0 10px 10px 10px; border-radius: 50%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08); border: 1px solid #e6e8ec; text-align: center; line-height: 0; text-decoration: none; padding: 12px;">
+                                <img src="https://img.icons8.com/?size=100&id=98960&format=png&color=000000" alt="LinkedIn" style="width: 24px; height: 24px; vertical-align: middle;">
+                            </a>
+                            {% endif %}
+
+                            {% if social_website %}
+                            <a href="{{ social_website }}" target="_blank" style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(to right, #ffffff, #ffffff) !important; background-color: #ffffff !important; margin: 0 10px 10px 10px; border-radius: 50%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08); border: 1px solid #e6e8ec; text-align: center; line-height: 0; text-decoration: none; padding: 12px;">
+                                {% if site_logo_url %}
+                                    <img src="{{ site_logo_url }}" alt="{% if site_name %}{{ site_name }}{% else %}{% get_env_tags 'BRAND' %}{% endif %}" style="width: 24px; height: 24px; vertical-align: middle;">
+                                {% else %}
+                                    <img src="https://img.icons8.com/?size=100&id=85088&format=png&color=000000" alt="Website" style="width: 24px; height: 24px; vertical-align: middle;">
+                                {% endif %}
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <p class="footer-text">© {% now "Y" %} {% if site_name %}{{ site_name }}{% else %}{% get_env_tags 'BRAND' %}{% endif %}. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

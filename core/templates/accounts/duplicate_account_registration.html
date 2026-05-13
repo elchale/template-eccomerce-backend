@@ -1,0 +1,22 @@
+{% extends 'base_layout.html' %}
+{% block content %}
+{% load i18n %}
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; font-weight: 600; margin: 0; margin-bottom: 14px;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">¡Hola {{ username }}!</span></span>
+</p>
+
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 15px; font-weight: normal; margin: 0; margin-bottom: 14px;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Se intentó registrar una cuenta con tu correo electrónico.</span></span>
+</p>
+
+<ul style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 14px; padding-left: 20px;">
+    <!-- <li> <strong>IP:</strong> {{ ip_address }} </li>
+    <li> <strong>Navegador:</strong> {{ browser }} </li>
+    <li> <strong>Sistema operativo:</strong> {{ os }} </li> -->
+    <li><span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;"><strong style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">Fecha y hora (UTC):</strong> {{ time }}</span></span></li>
+</ul>
+
+<p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 15px; font-weight: normal; margin: 0;">
+    <span class="gmail-blend-difference"><span style="color: #000000 !important; -webkit-text-fill-color: #000000 !important; mso-color-alt: #000;">En caso de que no hayas sido tú, por favor, restablece tu contraseña. Caso contrario, ignora este mensaje.</span></span>
+</p>
+{% endblock %}

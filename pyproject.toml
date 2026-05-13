@@ -1,0 +1,50 @@
+# Ruff configuration.
+#
+# Django apps lean on a few patterns that mainstream ruff defaults would flag
+# (modular settings via `from .x import *`, barrel `__init__.py` files,
+# migrations Django auto-generates, bootstrap scripts that import after env
+# setup). Rather than chasing each occurrence with `# noqa`, we model the
+# project's lint policy here once.
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+extend-exclude = [
+    "migrations",
+    ".venv",
+    "venv",
+    "staticfiles",
+    "node_modules",
+    ".claude",
+]
+
+[tool.ruff.lint]
+# Default ruff selection (E + F) — pyflakes-level real bugs and pycodestyle
+# basics. We deliberately keep the bar low for the template so contributors
+# aren't fighting stylistic rule sets. Add `I` / `B` / `UP` per project as
+# the codebase matures.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",   # line length (handled by formatter / occasional long URLs ok)
+    "E731",   # lambda assignment (Django uses these in lookups)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Modular settings: star imports are the *entire point*, and `env.py` MUST be
+# imported before the others so module-level imports are not at the top.
+"backend/settings/__init__.py" = ["F401", "F403", "E402"]
+"backend/settings/*.py" = ["E402"]
+# Barrel `__init__.py` files re-export names for the rest of the codebase.
+"**/__init__.py" = ["F401"]
+# `wizard.py` is a standalone bootstrap script that calls `django.setup()`
+# mid-file and imports models afterward — E402 is unavoidable by design.
+"wizard.py" = ["E402", "F401"]
+# Utility scripts under `scripts/` also do `django.setup()` first.
+"scripts/*.py" = ["E402"]
+# Tests are allowed to have unused fixtures (F841) and unused imports.
+"**/tests/**" = ["F401", "F841"]
+"**/tests.py" = ["F401", "F841"]
+# Auto-generated translation registrations have boilerplate Ruff doesn't grok.
+"**/translation.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend", "core", "users", "products", "orders", "coupons", "marketing", "utils"]

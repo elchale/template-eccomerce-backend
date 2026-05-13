@@ -1,0 +1,340 @@
+
+  You are an expert in Python, Django, and scalable web application development.
+
+  Key Principles
+  - Write clear, technical responses with precise Django examples.
+  - Use Django's built-in features and tools wherever possible to leverage its full capabilities.
+  - Prioritize readability and maintainability; follow Django's coding style guide (PEP 8 compliance).
+  - Use descriptive variable and function names; adhere to naming conventions (e.g., lowercase with underscores for functions and variables).
+  - Structure your project in a modular way using Django apps to promote reusability and separation of concerns.
+
+  Django/Python
+  - Use Django’s class-based views (CBVs) for more complex views; prefer function-based views (FBVs) for simpler logic.
+  - Leverage Django’s ORM for database interactions; avoid raw SQL queries unless necessary for performance.
+  - Use Django’s built-in user model and authentication framework for user management.
+  - Utilize Django's form and model form classes for form handling and validation.
+  - Follow the MVT (Model-View-Template) pattern strictly for clear separation of concerns.
+  - Use middleware judiciously to handle cross-cutting concerns like authentication, logging, and caching.
+
+  Error Handling and Validation
+  - Implement error handling at the view level and use Django's built-in error handling mechanisms.
+  - Use Django's validation framework to validate form and model data.
+  - Prefer try-except blocks for handling exceptions in business logic and views.
+  - Customize error pages (e.g., 404, 500) to improve user experience and provide helpful information.
+  - Use Django signals to decouple error handling and logging from core business logic.
+
+  Dependencies
+  - Django
+  - Django REST Framework (for API development)
+  - Celery (for background tasks)
+  - Redis (for caching and task queues)
+  - PostgreSQL or MySQL (preferred databases for production)
+
+  Django-Specific Guidelines
+  - Use Django templates for rendering HTML and DRF serializers for JSON responses.
+  - Keep business logic in models and forms; keep views light and focused on request handling.
+  - Use Django's URL dispatcher (urls.py) to define clear and RESTful URL patterns.
+  - Apply Django's security best practices (e.g., CSRF protection, SQL injection protection, XSS prevention).
+  - Use Django’s built-in tools for testing (unittest and pytest-django) to ensure code quality and reliability.
+  - Leverage Django’s caching framework to optimize performance for frequently accessed data.
+  - Use Django’s middleware for common tasks such as authentication, logging, and security.
+
+  Performance Optimization
+  - Optimize query performance using Django ORM's select_related and prefetch_related for related object fetching.
+  - Use Django’s cache framework with backend support (e.g., Redis or Memcached) to reduce database load.
+  - Implement database indexing and query optimization techniques for better performance.
+  - Use asynchronous views and background tasks (via Celery) for I/O-bound or long-running operations.
+  - Optimize static file handling with Django’s static file management system (e.g., WhiteNoise or CDN integration).
+
+  Key Conventions
+  1. Follow Django's "Convention Over Configuration" principle for reducing boilerplate code.
+  2. Prioritize security and performance optimization in every stage of development.
+  3. Maintain a clear and logical project structure to enhance readability and maintainability.
+  
+  Refer to Django documentation for best practices in views, models, forms, and security considerations.
+
+  Project Structure: daddy-django
+  - The backend/ directory contains core Django settings with modular configuration files.
+  - The core/ app houses shared templates, templatetags, and base functionality.
+  - The users/ app implements a comprehensive authentication system with profile management.
+  - The utils/ directory provides reusable functions and helpers across the project.
+
+  Each app must have a specific purpose and functionality. If you need to implement a feature that is completely different from the existing apps, create a new app.
+
+  If you need to implement a new feature but its small and it contributes to the project just add it to the core app.
+
+  Template Structure:
+  - The core/ app houses shared templates, templatetags, and base functionality.
+  - All templates must be placed in the core/templates/ directory, inside a folder with the name of the app that is using the template.
+
+  Code Organization
+  - Use the core abstract base models (BaseModel, UserMixinModel) for consistent field patterns.
+  - Separate serializers into logical groups by domain function.
+  - Implement specific adapters for extending third-party functionality.
+  - Follow Django's app-based modularity pattern for clean separation of concerns.
+
+## File Upload Handling
+
+**Core Principle**: Never store files directly in Django models. Always upload files to Google Cloud Storage and store only the file URL in the database.
+
+### File Upload Pattern
+- Models should use `URLField` for file references, never `FileField` or `ImageField`
+- Views must handle file uploads by uploading to GCS first, then saving the returned URL
+- Use the GCS utility functions provided in `core/utils/gcs.py` for all file operations
+
+### Implementation Guidelines
+
+**Model Design:**
+```python
+# ✅ Correct - Use URLField for file references
+class Project(BaseModel):
+    name = models.CharField(max_length=200)
+    logo_url = models.URLField(blank=True, null=True)
+    document_url = models.URLField(blank=True, null=True)
+
+class Profile(BaseModel):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    avatar_url = models.URLField(blank=True, null=True)
+    resume_url = models.URLField(blank=True, null=True)
+
+# ❌ Incorrect - Never use FileField or ImageField
+class Project(BaseModel):
+    name = models.CharField(max_length=200)
+    logo = models.ImageField(upload_to='logos/')  # DON'T DO THIS
+    document = models.FileField(upload_to='docs/')  # DON'T DO THIS
+```
+
+**View Implementation:**
+```python
+from core.utils.gcs import upload_image, upload_document, upload_file, delete_file_from_url
+
+def create_project(request):
+    if request.method == 'POST':
+        try:
+            # Handle image uploads
+            logo_url = None
+            if 'logo' in request.FILES:
+                logo_url = upload_image(
+                    request.FILES['logo'], 
+                    folder='projects/logos'
+                )
+            
+            # Handle document uploads
+            document_url = None
+            if 'document' in request.FILES:
+                document_url = upload_document(
+                    request.FILES['document'],
+                    folder='projects/documents'
+                )
+            
+            # Create model with URLs
+            project = Project.objects.create(
+                name=request.POST['name'],
+                logo_url=logo_url,
+                document_url=document_url
+            )
+            
+        except Exception as e:
+            # Handle upload errors
+            messages.error(request, f"File upload failed: {str(e)}")
+            return render(request, 'projects/create.html')
+
+def update_project(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+    
+    if request.method == 'POST':
+        try:
+            # Handle logo replacement
+            if 'logo' in request.FILES:
+                # Delete old logo if exists
+                if project.logo_url:
+                    delete_file_from_url(project.logo_url)
+                
+                # Upload new logo
+                project.logo_url = upload_image(
+                    request.FILES['logo'],
+                    folder='projects/logos'
+                )
+            
+            project.save()
+            
+        except Exception as e:
+            messages.error(request, f"File upload failed: {str(e)}")
+```
+
+**Available GCS Functions:**
+
+**Core Functions:**
+- `upload_file(file, folder, filename=None, allowed_types=None, max_size_mb=None)` - Generic file upload with optional validation
+- `upload_image(file, folder='images', filename=None, max_size_mb=5)` - Image upload with validation
+- `upload_document(file, folder='documents', filename=None, max_size_mb=10)` - Document upload with validation
+- `delete_file_from_url(file_url)` - Delete files using their GCS URLs
+- `generate_secure_filename(original_filename, prefix=None)` - Generate secure filenames
+
+**Usage Examples:**
+```python
+# Generic file upload with custom validation
+pdf_url = upload_file(
+    file=request.FILES['contract'],
+    folder='contracts',
+    allowed_types=['application/pdf'],
+    max_size_mb=20
+)
+
+# Image upload (automatically validates image types)
+avatar_url = upload_image(
+    file=request.FILES['avatar'],
+    folder='profiles/avatars',
+    max_size_mb=2
+)
+
+# Document upload (validates common document types)
+resume_url = upload_document(
+    file=request.FILES['resume'],
+    folder='profiles/resumes'
+)
+
+# Custom filename with prefix
+logo_url = upload_image(
+    file=request.FILES['logo'],
+    folder='companies/logos',
+    filename=generate_secure_filename(
+        request.FILES['logo'].name,
+        prefix=company.name
+    )
+)
+
+# Delete old files when updating
+if old_avatar_url:
+    delete_file_from_url(old_avatar_url)
+```
+
+**Form Handling:**
+- Forms should include file input fields for uploads
+- Process file uploads in the view before model creation/update
+- Handle file upload errors gracefully with proper error messages
+- Use appropriate upload functions based on file type (image, document, or generic)
+- Always validate file types and sizes using the built-in validation
+
+**Error Handling:**
+- Wrap GCS upload calls in try-except blocks
+- Provide meaningful error messages for upload failures
+- Consider rollback strategies if model creation fails after successful file upload
+- Log all file upload operations for debugging and audit purposes
+- Delete old files when replacing them to avoid storage bloat
+
+**Security Considerations:**
+- File type validation is handled by GCS utility functions
+- File size limits are enforced (customizable per upload function)
+- All uploaded files use UUID-based filenames for security
+- Never trust client-provided filenames; always generate secure filenames
+- Files are organized in logical folder structures within the GCS bucket
+
+**File Organization Best Practices:**
+- Use logical folder structures: `app_name/file_type/` (e.g., `profiles/avatars/`, `projects/documents/`)
+- Group related files together in folders
+- Use descriptive folder names that reflect the content type
+- Consider including model IDs or user IDs in folder paths for better organization
+
+## URL Documentation Standards
+
+**Core Principle**: Every Django app must maintain a comprehensive README that documents all its URL patterns and endpoints.
+
+### Documentation Requirements
+
+**App README Structure:**
+- Each app must have a `README.md` file in its root directory
+- The README must include a "URLs & Endpoints" section that lists all URL patterns
+- Document both web views and API endpoints if the app has both
+- Update the README whenever new URLs are added or existing ones are modified
+
+### URL Documentation Format
+
+**Required Information for Each URL:**
+- URL pattern
+- HTTP methods supported
+- Brief description of functionality
+- Required parameters (if any)
+- Authentication requirements
+- Expected request/response format (for APIs)
+
+**Example App README Structure:**
+```markdown
+# App Name
+
+Brief description of what this app does.
+
+## URLs & Endpoints
+
+### Web Views
+| URL Pattern | Method | Description | Auth Required |
+|-------------|--------|-------------|---------------|
+| `/projects/` | GET | List all projects | Yes |
+| `/projects/create/` | GET, POST | Create new project | Yes |
+| `/projects/<int:id>/` | GET | Project detail view | Yes |
+| `/projects/<int:id>/edit/` | GET, POST | Edit project | Yes (owner only) |
+| `/projects/<int:id>/delete/` | POST | Delete project | Yes (owner only) |
+
+### API Endpoints
+| URL Pattern | Method | Description | Request Body | Response |
+|-------------|--------|-------------|--------------|----------|
+| `/api/projects/` | GET | List projects | - | JSON array |
+| `/api/projects/` | POST | Create project | JSON object | Created project |
+| `/api/projects/<int:id>/` | GET | Get project | - | JSON object |
+| `/api/projects/<int:id>/` | PUT | Update project | JSON object | Updated project |
+| `/api/projects/<int:id>/` | DELETE | Delete project | - | 204 status |
+
+### URL Parameters
+- `<int:id>`: Project ID (integer)
+- `<slug:slug>`: Project slug (string)
+
+### Authentication Notes
+- All endpoints require authentication unless specified
+- Owner-only endpoints check if user is the project creator
+- API endpoints use token authentication
+```
+
+### Implementation Workflow
+
+**When Adding New URLs:**
+1. Implement the view/endpoint in your app
+2. Add URL pattern to the app's `urls.py`
+3. Immediately update the app's README.md with the new URL documentation
+4. Include any new parameters, authentication requirements, or special notes
+
+**When Modifying Existing URLs:**
+1. Update the view/endpoint implementation
+2. Modify the URL pattern if needed
+3. Update the corresponding documentation in the app's README
+4. Mark any breaking changes clearly in the documentation
+
+### Documentation Best Practices
+
+**URL Pattern Documentation:**
+- Use the exact pattern from `urls.py` (including parameter names)
+- Group related URLs together (CRUD operations for the same model)
+- Sort URLs logically (list → create → detail → update → delete)
+- Include both the URL pattern and a human-readable description
+
+**Parameter Documentation:**
+- Document all URL parameters with their types and descriptions
+- Explain any constraints or validation rules
+- Provide examples for complex parameters
+
+**Authentication Documentation:**
+- Clearly state authentication requirements for each endpoint
+- Explain permission levels (e.g., "owner only", "admin required")
+- Document any special access rules or exceptions
+
+**API-Specific Documentation:**
+- Include expected request body format and required fields
+- Document response format and status codes
+- Provide examples for complex request/response structures
+- Note any pagination, filtering, or sorting options
+
+### Quality Standards
+- Keep documentation current - outdated URL docs are worse than no docs
+- Use consistent formatting across all app READMEs
+- Review and update documentation during code reviews
+- Test documented URLs to ensure accuracy
+- Include examples for complex or non-obvious URL patterns

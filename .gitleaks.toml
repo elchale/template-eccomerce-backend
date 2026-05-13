@@ -1,0 +1,19 @@
+[allowlist]
+description = "CI/dev template values and test fixtures"
+regexes = [
+    # Template placeholder strings
+    '''django-secure-''',
+    '''your-google-client-id''',
+    '''your-google-client-secret''',
+    '''your-bucket-name''',
+    '''your-project-id''',
+    # Test fixtures in test files
+    '''testpass''',
+    '''ci-secret-key''',
+]
+
+paths = [
+    ".env.template",
+    ".env.docker.template",
+    ".github/workflows/ci.yml",
+]

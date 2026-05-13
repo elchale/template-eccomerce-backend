@@ -1,0 +1,24 @@
+¡Gracias por tu pedido!
+
+Hemos recibido tu pedido #{{ order.order_number }} y lo estamos procesando.
+
+RESUMEN DEL PEDIDO
+==================
+{% for item in items %}
+{{ item.product_name }}{% if item.variant_info %} ({{ item.variant_info }}){% endif %}
+  Cantidad: {{ item.quantity }}
+  Precio:   {{ order.currency_code }} {{ item.price }}
+{% endfor %}
+
+Subtotal:  {{ order.currency_code }} {{ order.subtotal }}
+{% if order.discount_amount %}Descuento: -{{ order.currency_code }} {{ order.discount_amount }}
+{% endif %}{% if order.shipping_amount %}Envío:     {{ order.currency_code }} {{ order.shipping_amount }}
+{% endif %}Total:     {{ order.currency_code }} {{ order.total }}
+
+{% if order.shipping_address %}
+DIRECCIÓN DE ENVÍO
+==================
+{{ order.shipping_address }}
+{% endif %}
+
+Si tienes alguna pregunta, no dudes en contactarnos.

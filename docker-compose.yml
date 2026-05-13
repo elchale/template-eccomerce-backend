@@ -1,0 +1,104 @@
+# Local-development orchestration. Reconstructed from running containers.
+#
+# All env values for the web/worker/beat services come from `.env.docker`
+# at the backend root — copy `.env.docker.template` to `.env.docker` and
+# fill in the secrets. Database, Redis and RabbitMQ defaults below are
+# only used inside the compose network; the web tier reads them via the
+# DB_*/REDIS_*/AMQP_* env vars in `.env.docker`.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: eccomerce
+      POSTGRES_USER: eccomerce
+      POSTGRES_PASSWORD: eccomerce
+    ports:
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eccomerce"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "56379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "55672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: eccomerce-backend:latest
+    build:
+      context: .
+    command: >
+      gunicorn backend.asgi:application
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --workers 3
+      --access-logfile -
+      --error-logfile -
+    env_file:
+      - .env.docker
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: eccomerce-backend:latest
+    build:
+      context: .
+    command: celery -A backend worker --loglevel=info
+    env_file:
+      - .env.docker
+    depends_on:
+      - web
+
+  beat:
+    image: eccomerce-backend:latest
+    build:
+      context: .
+    command: celery -A backend beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    env_file:
+      - .env.docker
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitdata:
