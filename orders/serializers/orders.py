@@ -1,6 +1,24 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
-from orders.models import Order, OrderItem, OrderStatusHistory
+from orders.models import Order, OrderItem, OrderStatusHistory, Refund
+
+
+class RefundSerializer(serializers.ModelSerializer):
+    requested_by_email = serializers.EmailField(
+        source='requested_by.email', read_only=True, default=''
+    )
+    processed_by_email = serializers.EmailField(
+        source='processed_by.email', read_only=True, default=''
+    )
+
+    class Meta:
+        model = Refund
+        fields = [
+            'id', 'amount', 'reason', 'status', 'external_refund_id',
+            'requested_by_email', 'processed_by_email', 'created',
+        ]
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -112,6 +130,7 @@ class CheckoutSerializer(serializers.Serializer):
 class AdminOrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+    refunds = RefundSerializer(many=True, read_only=True)
     user_email = serializers.EmailField(
         source='user.email', read_only=True, default=''
     )
@@ -143,6 +162,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             'coupon_code',
             'items',
             'status_history',
+            'refunds',
             'item_count',
             'created',
             'updated',
@@ -157,6 +177,41 @@ class AdminOrderSerializer(serializers.ModelSerializer):
 class AdminOrderStatusUpdateSerializer(serializers.Serializer):
     new_status = serializers.ChoiceField(choices=Order.Status.choices)
     note = serializers.CharField(required=False, allow_blank=True, default='')
+    # `cancel_reason` is required only when transitioning to 'cancelled'.
+    # Enforced in validate() so the field stays optional for other transitions
+    # without polluting them with an unused-but-required hoop to jump through.
+    cancel_reason = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if attrs['new_status'] == Order.Status.CANCELLED:
+            reason = (attrs.get('cancel_reason') or '').strip()
+            if not reason:
+                raise serializers.ValidationError({
+                    'cancel_reason': 'Se requiere un motivo para cancelar el pedido.',
+                })
+            attrs['cancel_reason'] = reason
+        return attrs
+
+
+class AdminOrderRefundSerializer(serializers.Serializer):
+    """Body for POST /api/admin/orders/:id/refund/.
+
+    Refund is intentionally separate from cancel: an admin may cancel an
+    order for fulfilment reasons without an immediate money movement, and
+    refunds may need to be partial. Setting `amount` to None refunds the
+    full order total.
+    """
+    reason = serializers.CharField()
+    amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True,
+        default=None, min_value=Decimal('0.01'),
+    )
+
+    def validate_reason(self, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise serializers.ValidationError('Se requiere un motivo para el reembolso.')
+        return stripped
 
 
 class DashboardSerializer(serializers.Serializer):

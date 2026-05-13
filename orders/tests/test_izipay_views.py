@@ -226,13 +226,40 @@ def test_ipn_bad_hmac(client, pending_order, valid_ipn_payload):
 
 
 # ===========================================================================
-# Case 8 — Wrong kr-hash-key ('password') — BP1
+# Case 8 — Legacy 'password' kr-hash-key mode is accepted when valid
 # ===========================================================================
 @pytest.mark.django_db
-def test_ipn_wrong_hash_key(client, pending_order, valid_ipn_payload):
-    """Case 8: kr-hash-key='password' is rejected with 400, logs 'bad_signature', wrong_key."""
+def test_ipn_password_mode_accepted(client, pending_order):
+    """Case 8a: a PAID IPN signed with the API key + kr-hash-key=password is
+    accepted and the order is marked paid. Our Izipay shop is configured for
+    this legacy mode."""
+    from orders.tests.conftest import TEST_API_KEY, make_valid_ipn_payload
+
+    payload = make_valid_ipn_payload(
+        order_number=pending_order.order_number,
+        order_status='PAID',
+        amount_centimos=1000,
+        hmac_key=TEST_API_KEY,  # sign with API key
+    )
+    payload['kr-hash-key'] = 'password'
+
+    resp = post_ipn_json(client, payload)
+    assert resp.status_code == 200
+
+    pending_order.refresh_from_db()
+    assert pending_order.payment_status == 'paid'
+
+    event = IpnEvent.objects.filter(order_number=pending_order.order_number).last()
+    assert event is not None
+    assert event.processed_outcome == 'paid'
+
+
+@pytest.mark.django_db
+def test_ipn_unknown_hash_key_rejected(client, pending_order, valid_ipn_payload):
+    """Case 8b: kr-hash-key values other than 'sha256_hmac' / 'password' are
+    rejected with 400 and logged as bad_signature/wrong_key."""
     payload = dict(valid_ipn_payload)
-    payload['kr-hash-key'] = 'password'  # Not allowed (BP1)
+    payload['kr-hash-key'] = 'hmac_md5'  # Unsupported
 
     resp = post_ipn_json(client, payload)
     assert resp.status_code == 400

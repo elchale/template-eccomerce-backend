@@ -8,7 +8,7 @@ import pytest
 from django.conf import settings
 
 from orders.izipay import IzipayError, cancel_or_refund, create_payment_token, verify_hash
-from orders.tests.conftest import TEST_HMAC_KEY, sign_kr_answer
+from orders.tests.conftest import TEST_API_KEY, TEST_HMAC_KEY, sign_kr_answer
 
 
 # ---------------------------------------------------------------------------
@@ -33,16 +33,31 @@ def test_verify_hash_tampered():
 
 
 # ---------------------------------------------------------------------------
-# S3 — verify_hash wrong key type (BP1)
+# S3 — verify_hash supports both modes; unknown types still fail
 # ---------------------------------------------------------------------------
-def test_verify_hash_wrong_key_type():
-    """S3: verify_hash returns False when kr_hash_key is not 'sha256_hmac'."""
+def test_verify_hash_password_mode_validates_against_api_key():
+    """S3a: 'password' mode signs/verifies with the API key (legacy mode).
+
+    Our Izipay shop is configured for legacy 'password' mode; the router and
+    neighbour backends accept it, and so do we. Signing with the *wrong*
+    secret for the declared mode must still fail.
+    """
     payload = '{"orderStatus":"PAID"}'
-    # Even with a valid signature, wrong key type must return False (BP1)
+    api_key_sig = sign_kr_answer(payload, TEST_API_KEY)
+    hmac_key_sig = sign_kr_answer(payload, TEST_HMAC_KEY)
+
+    assert verify_hash(api_key_sig, payload, 'password') is True
+    # HMAC-key signature with mode=password must fail — no fallback chain.
+    assert verify_hash(hmac_key_sig, payload, 'password') is False
+
+
+def test_verify_hash_unknown_modes_rejected():
+    """S3b: unknown kr_hash_key values always return False."""
+    payload = '{"orderStatus":"PAID"}'
     signature = sign_kr_answer(payload, TEST_HMAC_KEY)
-    assert verify_hash(signature, payload, 'password') is False
     assert verify_hash(signature, payload, 'hmac') is False
     assert verify_hash(signature, payload, '') is False
+    assert verify_hash(signature, payload, 'sha512_hmac') is False
 
 
 # ---------------------------------------------------------------------------

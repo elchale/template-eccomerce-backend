@@ -8,7 +8,12 @@ Key points:
 - HMAC-SHA-256 is used to verify IPN signatures — never trust client callbacks alone.
 - `kr_answer_raw` must be the exact string Izipay sent; do NOT parse and
   re-serialize it as key order may differ and the hash would not match.
-- BP1: strict sha256_hmac only — no fallback to 'password' key type.
+- Two `kr-hash-key` modes are accepted — chosen deterministically by the
+  incoming value, never as a fallback chain:
+    * 'sha256_hmac' → HMAC over kr-answer with the dedicated HMAC key.
+    * 'password'    → HMAC over kr-answer with the API key (legacy mode
+                      used by Izipay shops that haven't been migrated to
+                      the dedicated HMAC key; ours is one of them).
 """
 import hmac
 import hashlib
@@ -99,26 +104,37 @@ def create_payment_token(order) -> str:
 def verify_hash(kr_hash: str, kr_answer_raw: str, kr_hash_key: str = 'sha256_hmac') -> bool:
     """Verify an HMAC-SHA-256 signature from an Izipay IPN or client callback.
 
-    BP1: Strict sha256_hmac only — only validates when kr_hash_key == 'sha256_hmac'.
-    Any other key type returns False (rejected), never falls back.
+    The secret is picked deterministically by ``kr_hash_key`` — never a
+    fallback chain (an attacker probing one secret must not get a free shot
+    at the other):
+
+      * ``'sha256_hmac'`` → use ``settings.IZIPAY_HMAC_KEY``.
+      * ``'password'``    → use ``settings.IZIPAY_API_KEY`` (legacy mode).
+
+    Any other value returns ``False`` immediately.
 
     Args:
         kr_hash:       The ``kr-hash`` value received from Izipay.
         kr_answer_raw: The raw JSON string of ``kr-answer`` exactly as
                        received — do NOT parse and re-serialise.
-        kr_hash_key:   Must be ``'sha256_hmac'`` or this returns False.
+        kr_hash_key:   ``'sha256_hmac'`` or ``'password'``.
 
     Returns:
         ``True`` if the computed digest matches ``kr_hash``.
     """
-    if kr_hash_key != 'sha256_hmac':
+    if kr_hash_key == 'sha256_hmac':
+        key = settings.IZIPAY_HMAC_KEY
+    elif kr_hash_key == 'password':
+        key = settings.IZIPAY_API_KEY
+    else:
         logger.warning(
-            'Izipay verify_hash: unsupported key type "%s" (only sha256_hmac allowed)',
-            kr_hash_key,
+            'Izipay verify_hash: unsupported key type "%s"', kr_hash_key,
         )
         return False
 
-    key = settings.IZIPAY_HMAC_KEY
+    if not key:
+        logger.error('Izipay verify_hash: secret for mode "%s" is empty', kr_hash_key)
+        return False
 
     computed = hmac.new(
         key.encode('utf-8'),

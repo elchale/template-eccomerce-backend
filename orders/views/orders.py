@@ -11,15 +11,16 @@ from rest_framework.views import APIView
 
 from coupons.models import Coupon
 from orders.izipay import IzipayError, cancel_or_refund
-from orders.models import Cart, Order, OrderItem, OrderStatusHistory
+from orders.models import Cart, Order, OrderItem, OrderStatusHistory, Refund
 from orders.serializers.orders import (
+    AdminOrderRefundSerializer,
     AdminOrderSerializer,
     AdminOrderStatusUpdateSerializer,
     CheckoutSerializer,
     OrderDetailSerializer,
     OrderListSerializer,
 )
-from orders.tasks import send_order_confirmation_email
+from orders.tasks import send_order_confirmation_email, send_refund_email
 from orders.services.state_machine import OrderStateMachine
 from orders.exceptions import InvalidTransition
 
@@ -297,7 +298,17 @@ class AdminOrderDetailView(generics.RetrieveAPIView):
 
 
 class AdminOrderStatusUpdateView(APIView):
-    """PATCH - Update order status and create history entry (admin only)."""
+    """PATCH - Update order status and create history entry (admin only).
+
+    Cancel transitions require a ``cancel_reason`` (enforced by the
+    serializer). The reason is prepended to the audit note so it shows up
+    verbatim in the customer-facing status history.
+
+    Refund is intentionally NOT triggered here — cancelling a paid order
+    leaves payment_status='paid' so the admin can run the gateway-side
+    refund explicitly via POST /api/admin/orders/<pk>/refund/ (different
+    audit trail, different failure surface).
+    """
 
     permission_classes = [IsAdminUser]
 
@@ -315,6 +326,7 @@ class AdminOrderStatusUpdateView(APIView):
 
         new_status = serializer.validated_data['new_status']
         note = serializer.validated_data.get('note', '')
+        cancel_reason = serializer.validated_data.get('cancel_reason', '')
 
         old_status = order.status
 
@@ -324,21 +336,130 @@ class AdminOrderStatusUpdateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # When admin cancels a paid order, attempt refund via Izipay before state transition
-        if new_status == 'cancelled' and order.payment_status == 'paid' and order.izipay_transaction_id:
-            try:
-                cancel_or_refund(order.izipay_transaction_id, int(order.total * 100))
-            except IzipayError as exc:
-                return Response(
-                    {'message': f'Refund failed: {exc}', 'type': 'refund_failed', 'field_errors': {}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            order.payment_status = 'refunded'
-            order.save(update_fields=['payment_status', 'updated'])
+        # Prefix the cancel reason so it lives at the top of the audit note
+        # — the customer-facing order detail surfaces this verbatim.
+        combined_note = note
+        if new_status == Order.Status.CANCELLED:
+            prefix = f'Motivo de cancelación: {cancel_reason}'
+            combined_note = f'{prefix}\n\n{note}'.strip() if note else prefix
 
         try:
-            OrderStateMachine.transition(order, new_status, user=request.user, note=note)
+            OrderStateMachine.transition(order, new_status, user=request.user, note=combined_note)
         except InvalidTransition as exc:
             return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(AdminOrderSerializer(order).data)
+
+
+class AdminOrderRefundView(APIView):
+    """POST /api/admin/orders/<pk>/refund/ — issue a refund via Izipay.
+
+    Atomic write: calls the gateway first; on success creates a Refund row,
+    flips payment_status='refunded', and queues the customer email. The
+    Refund row is the canonical record — admins can issue partial refunds
+    by passing `amount`; omitting it refunds the order total.
+
+    Idempotency: a paid order that's already been fully refunded is
+    rejected with 400 so we don't double-charge the gateway. Partial
+    refunds are allowed up to the remaining unrefunded balance.
+    """
+
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, pk):
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return Response({'detail': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = AdminOrderRefundSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data['reason']
+        requested_amount = serializer.validated_data.get('amount')
+
+        if order.payment_status != 'paid':
+            return Response(
+                {'detail': 'Solo se pueden reembolsar pedidos pagados.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not order.izipay_transaction_id:
+            return Response(
+                {'detail': 'El pedido no tiene una transacción Izipay asociada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Compute remaining balance (sum of processed refunds)
+        already_refunded = sum(
+            (r.amount for r in order.refunds.filter(status=Refund.RefundStatus.PROCESSED)),
+            Decimal('0.00'),
+        )
+        max_refundable = order.total - already_refunded
+        if max_refundable <= Decimal('0.00'):
+            return Response(
+                {'detail': 'Este pedido ya fue reembolsado totalmente.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        refund_amount = requested_amount if requested_amount is not None else max_refundable
+        if refund_amount > max_refundable:
+            return Response(
+                {'detail': f'El monto excede el saldo reembolsable ({max_refundable}).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Gateway call first — if Izipay refuses, we must not write a Refund row.
+        try:
+            gateway_response = cancel_or_refund(
+                order.izipay_transaction_id, int(refund_amount * 100),
+            )
+        except IzipayError as exc:
+            return Response(
+                {'detail': f'Izipay rechazó el reembolso: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        external_refund_id = (
+            gateway_response.get('answer', {}).get('transactions', [{}])[0].get('uuid', '')
+            if isinstance(gateway_response, dict) else ''
+        )
+
+        with transaction.atomic():
+            Refund.objects.create(
+                order=order,
+                amount=refund_amount,
+                reason=reason,
+                status=Refund.RefundStatus.PROCESSED,
+                external_refund_id=external_refund_id,
+                requested_by=request.user,
+                processed_by=request.user,
+            )
+
+            new_remaining = max_refundable - refund_amount
+            if new_remaining <= Decimal('0.00'):
+                order.payment_status = 'refunded'
+                order.save(update_fields=['payment_status', 'updated'])
+
+            # Append refund event to the customer audit log so they can
+            # see "Refunded: <reason>" in their own order detail page.
+            OrderStatusHistory.objects.create(
+                order=order,
+                old_status=order.status,
+                new_status=order.status,
+                note=f'Reembolso ({refund_amount} {order.currency_code}): {reason}',
+                changed_by=request.user,
+            )
+
+        # Fire-and-forget customer email outside the atomic block
+        try:
+            send_refund_email.delay(order.id)
+        except Exception:
+            pass
+
+        # Re-fetch so refunds + status_history reflect the new rows
+        refreshed = (
+            Order.objects.select_related('user', 'coupon')
+            .prefetch_related('items', 'status_history__changed_by', 'refunds')
+            .get(pk=order.pk)
+        )
+        return Response(AdminOrderSerializer(refreshed).data)

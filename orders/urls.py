@@ -11,6 +11,7 @@ from orders.views.cart import (
 from orders.views.orders import (
     AdminOrderDetailView,
     AdminOrderListView,
+    AdminOrderRefundView,
     AdminOrderStatusUpdateView,
     CheckoutView,
     OrderDetailView,
@@ -39,6 +40,7 @@ urlpatterns = [
     path('api/admin/orders/', AdminOrderListView.as_view(), name='admin-order-list'),
     path('api/admin/orders/<int:pk>/', AdminOrderDetailView.as_view(), name='admin-order-detail'),
     path('api/admin/orders/<int:pk>/status/', AdminOrderStatusUpdateView.as_view(), name='admin-order-status-update'),
+    path('api/admin/orders/<int:pk>/refund/', AdminOrderRefundView.as_view(), name='admin-order-refund'),
 
     # Admin dashboard
     path('api/admin/dashboard/', DashboardView.as_view(), name='admin-dashboard'),

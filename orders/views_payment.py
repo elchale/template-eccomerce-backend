@@ -5,8 +5,10 @@ Three endpoints:
 - POST /api/payments/izipay/verify/        — authenticated, verifies client callback
 - POST /api/payments/izipay/ipn/           — public, CSRF-exempt, server-to-server IPN
 
-ADR §5 API contract. BP1: strict sha256_hmac only.
-BP2: raw kr_answer string for HMAC verify. BP3: atomic IPN writes.
+ADR §5 API contract. Accepts both 'sha256_hmac' and 'password' kr-hash-key
+modes (matches the izipay-router and neighbour backends — our shop is
+configured for legacy 'password' mode). BP2: raw kr_answer string for HMAC
+verify. BP3: atomic IPN writes.
 """
 import json
 import logging
@@ -137,8 +139,7 @@ def verify_izipay_payment(request):
             status=400,
         )
 
-    # BP1: strict sha256_hmac only
-    if kr_hash_key != 'sha256_hmac':
+    if kr_hash_key not in ('sha256_hmac', 'password'):
         return Response({'detail': 'Tipo de firma no soportado.'}, status=400)
 
     # BP2: verify against raw bytes — no re-serialization
@@ -269,8 +270,10 @@ def izipay_ipn(request):
     order_number = kr_answer.get('orderDetails', {}).get('orderId', '')
     order_status = kr_answer.get('orderStatus', '')
 
-    # Step 3: BP1 — strict sha256_hmac only
-    if kr_hash_key != 'sha256_hmac':
+    # Step 3: accept both supported modes — anything else is malformed.
+    # The router and neighbour backends do the same; our Izipay shop signs
+    # in legacy 'password' mode.
+    if kr_hash_key not in ('sha256_hmac', 'password'):
         logger.warning(
             'Izipay IPN: wrong kr-hash-key type "%s" from %s',
             kr_hash_key, source_ip,
