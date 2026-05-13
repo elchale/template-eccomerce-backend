@@ -1,3 +1,20 @@
+# Minimal PEP 621 metadata.
+#
+# The Django app is deployed via `requirements.txt` (Railway / Render build
+# scripts), not via this file — runtime dependency resolution still goes
+# through pip. The `[project]` table exists so PEP 621-aware tools (uv, hatch,
+# Poetry import, Vercel's Python builder if it ever wanders in here) can read
+# the file without error. Without it, `uv lock` fails with
+# "No `project` table found in pyproject.toml".
+[project]
+name = "eccomerce-backend"
+version = "0.1.0"
+description = "Django backend for the Qolca Solutions e-commerce template."
+requires-python = ">=3.13"
+# Single source of truth for installable deps is requirements.txt — keep this
+# list empty so we don't create two places that have to stay in sync.
+dependencies = []
+
 # Ruff configuration.
 #
 # Django apps lean on a few patterns that mainstream ruff defaults would flag
