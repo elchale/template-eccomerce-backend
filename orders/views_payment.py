@@ -400,8 +400,10 @@ def izipay_ipn(request):
                 changed_by=None,
             )
 
-            # D5: Clear cart now (not at checkout creation)
-            # ADR §1 D5: cart clears on IPN PAID, not at order creation
+            # Cart was cleared at order creation (CheckoutView); this branch
+            # is now a safety net for orders created before that change. The
+            # delete is idempotent so it's safe even if the cart is already
+            # empty.
             cart_qs = Cart.objects.filter(user=order.user).first()
             if cart_qs:
                 cart_qs.items.all().delete()

@@ -227,8 +227,13 @@ class CheckoutView(APIView):
                     times_used=F('times_used') + 1
                 )
 
-            # ADR §1 D5: cart clears on IPN PAID, not at order creation.
-            # Do NOT clear cart here — preserved so abandoned-cart users can return.
+            # Clear the cart at order creation. The order is now the source
+            # of truth for "what the customer is buying"; if they abandon
+            # without paying they can resume payment from /orders/<n> (the
+            # resume-pay CTA introduced for pending+unpaid orders), so we
+            # don't need to keep the cart populated as a safety net. This
+            # supersedes the older ADR §1 D5 (cart clears on IPN PAID).
+            cart.items.all().delete()
 
         # Send confirmation email via Celery
         send_order_confirmation_email.delay(order.id)
@@ -240,13 +245,29 @@ class CheckoutView(APIView):
 
 
 class OrderListView(generics.ListAPIView):
-    """GET - List the authenticated user's orders."""
+    """GET - List the authenticated user's orders.
+
+    Supports optional `?status=` and `?payment_status=` query params so the
+    storefront can ask "how many pending unpaid orders does this user have?"
+    cheaply (used by the navbar's orders-icon badge).
+    """
 
     serializer_class = OrderListSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = LimitOffsetPagination
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related('items')
+        qs = Order.objects.filter(user=self.request.user).prefetch_related('items')
+
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        payment_status_filter = self.request.query_params.get('payment_status')
+        if payment_status_filter:
+            qs = qs.filter(payment_status=payment_status_filter)
+
+        return qs
 
 
 class OrderDetailView(generics.RetrieveAPIView):
