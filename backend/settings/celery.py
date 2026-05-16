@@ -1,13 +1,17 @@
 """Celery / broker settings.
 
-When USE_CELERY=False (local dev without a broker), tasks run synchronously
-via CELERY_TASK_ALWAYS_EAGER so the application stays fully functional without
-RabbitMQ.  Set USE_CELERY=True in production or when you need real async.
+When USE_CELERY=False (the default), tasks run synchronously via
+CELERY_TASK_ALWAYS_EAGER so the application stays fully functional without a
+broker. Order emails additionally fall back to a daemon-thread sender in this
+mode (see orders/email_dispatch.py), so mail still goes out without a worker.
+Set USE_CELERY=True ONLY when a Celery worker is actually running — otherwise
+tasks would enqueue to a broker that nobody drains.
 """
 from .env import env
 
-# Optional Celery — tasks run eagerly when False (broker-less local dev)
-USE_CELERY = env('USE_CELERY', default=True)
+# Optional Celery — defaults to False: tasks run eagerly / via thread fallback
+# unless a worker is genuinely deployed and USE_CELERY=True is set explicitly.
+USE_CELERY = env('USE_CELERY', default=False)
 
 # Celery serialisation
 CELERY_TASK_SERIALIZER = 'pickle'
