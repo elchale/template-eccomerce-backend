@@ -38,15 +38,7 @@ ALLOWED_HOSTS = [env('DOMAIN', default='localhost')]
 # Container health checks and local dev always need localhost
 ALLOWED_HOSTS += ['localhost', '127.0.0.1']
 
-# Railway health checks reach the service via *.railway.app hosts (e.g.
-# healthcheck.railway.app), which are NOT the same as RAILWAY_PUBLIC_DOMAIN.
-# Hardcode the leading-dot wildcard so the whole zone is always allowed and
-# health checks pass regardless of whether ADDITIONAL_CORS_ORIGINS is set.
-# (cors.py may also append '.railway.app' from ADDITIONAL_CORS_ORIGINS — a
-# duplicate entry in ALLOWED_HOSTS is harmless; this guarantees it is present.)
-ALLOWED_HOSTS.append('.railway.app')
-
-# Railway auto-injects this; also allow the exact public Railway domain.
+# Railway auto-injects this; allow the public Railway domain when present
 _railway_domain = env('RAILWAY_PUBLIC_DOMAIN', default='')
 if _railway_domain:
     ALLOWED_HOSTS.append(_railway_domain)
