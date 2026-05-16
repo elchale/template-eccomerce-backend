@@ -9,6 +9,8 @@ from orders.views.cart import (
     UpdateCartItemView,
 )
 from orders.views.orders import (
+    AdminEmailLogListView,
+    AdminEmailLogRetryView,
     AdminOrderDetailView,
     AdminOrderListView,
     AdminOrderRefundView,
@@ -41,6 +43,10 @@ urlpatterns = [
     path('api/admin/orders/<int:pk>/', AdminOrderDetailView.as_view(), name='admin-order-detail'),
     path('api/admin/orders/<int:pk>/status/', AdminOrderStatusUpdateView.as_view(), name='admin-order-status-update'),
     path('api/admin/orders/<int:pk>/refund/', AdminOrderRefundView.as_view(), name='admin-order-refund'),
+
+    # Admin email logs
+    path('api/admin/email-logs/', AdminEmailLogListView.as_view(), name='admin-email-log-list'),
+    path('api/admin/email-logs/<int:pk>/retry/', AdminEmailLogRetryView.as_view(), name='admin-email-log-retry'),
 
     # Admin dashboard
     path('api/admin/dashboard/', DashboardView.as_view(), name='admin-dashboard'),

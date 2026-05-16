@@ -29,6 +29,7 @@ from orders.tasks import (
     send_payment_received_email,
     send_refund_email,
 )
+from orders.email_dispatch import dispatch_order_email
 
 logger = logging.getLogger(__name__)
 
@@ -355,7 +356,12 @@ def izipay_ipn(request):
                     'bad_amount', raw_body_str,
                     f'expected={expected_amount} received={paid_amount}',
                 )
-                send_admin_amount_mismatch_alert.delay(order.id, expected_amount, paid_amount)
+                dispatch_order_email(
+                    send_admin_amount_mismatch_alert,
+                    order.id, expected_amount, paid_amount,
+                    order_id=order.id,
+                    email_type='admin_amount_mismatch',
+                )
                 # Return 200 — do NOT mark paid (tamper detection)
                 return HttpResponse(
                     json.dumps({'status': 'ok'}),
@@ -448,13 +454,28 @@ def izipay_ipn(request):
                 'no_op', raw_body_str, order_status,
             )
 
-    # Queue async tasks outside the atomic block
+    # Queue async tasks outside the atomic block via dispatch_order_email
     if order_status == 'PAID':
-        send_payment_received_email.delay(order.id)
-        notify_admin_payment_received.delay(order.id)
+        dispatch_order_email(
+            send_payment_received_email,
+            order.id,
+            order_id=order.id,
+            email_type='customer_payment_received',
+        )
+        dispatch_order_email(
+            notify_admin_payment_received,
+            order.id,
+            order_id=order.id,
+            email_type='admin_new_paid_order',
+        )
         # Cart was already cleared inside the atomic block (D5)
     elif order_status in ('REFUNDED', 'CANCELLED'):
-        send_refund_email.delay(order.id)
+        dispatch_order_email(
+            send_refund_email,
+            order.id,
+            order_id=order.id,
+            email_type='customer_refund',
+        )
 
     return HttpResponse(
         json.dumps({'status': 'ok'}),

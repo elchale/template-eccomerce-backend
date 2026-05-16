@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 from coupons.models import Coupon
 from orders.izipay import IzipayError, cancel_or_refund
-from orders.models import Cart, Order, OrderItem, OrderStatusHistory, Refund
+from orders.models import Cart, EmailLog, Order, OrderItem, OrderStatusHistory, Refund
 from orders.serializers.orders import (
     AdminOrderRefundSerializer,
     AdminOrderSerializer,
@@ -20,7 +20,8 @@ from orders.serializers.orders import (
     OrderDetailSerializer,
     OrderListSerializer,
 )
-from orders.tasks import send_order_confirmation_email, send_refund_email
+from orders.tasks import send_refund_email
+from orders.email_dispatch import dispatch_order_email
 from orders.services.state_machine import OrderStateMachine
 from orders.exceptions import InvalidTransition
 
@@ -235,8 +236,9 @@ class CheckoutView(APIView):
             # supersedes the older ADR §1 D5 (cart clears on IPN PAID).
             cart.items.all().delete()
 
-        # Send confirmation email via Celery
-        send_order_confirmation_email.delay(order.id)
+        # ADR decision #1: no at-checkout confirmation email.
+        # The customer's email is the payment_received notification sent
+        # after the Izipay IPN confirms payment.
 
         return Response(
             OrderDetailSerializer(order).data,
@@ -471,11 +473,13 @@ class AdminOrderRefundView(APIView):
                 changed_by=request.user,
             )
 
-        # Fire-and-forget customer email outside the atomic block
-        try:
-            send_refund_email.delay(order.id)
-        except Exception:
-            pass
+        # Fire-and-forget customer refund email via dispatch_order_email
+        dispatch_order_email(
+            send_refund_email,
+            order.id,
+            order_id=order.id,
+            email_type='customer_refund',
+        )
 
         # Re-fetch so refunds + status_history reflect the new rows
         refreshed = (
@@ -484,3 +488,65 @@ class AdminOrderRefundView(APIView):
             .get(pk=order.pk)
         )
         return Response(AdminOrderSerializer(refreshed).data)
+
+
+class AdminEmailLogListView(generics.ListAPIView):
+    """GET /api/admin/email-logs/ — paginated list of email logs (admin only).
+
+    Supports optional query params:
+    - status: filter by status (pending|retrying|confirmed|failed)
+    - email_type: filter by EmailLog.EmailType value
+    """
+
+    permission_classes = [IsAdminUser]
+    pagination_class = LimitOffsetPagination
+
+    def get_serializer_class(self):
+        from orders.serializers.email_log import EmailLogSerializer
+        return EmailLogSerializer
+
+    def get_queryset(self):
+        qs = EmailLog.objects.select_related('order', 'recipient_user').all()
+
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        email_type_filter = self.request.query_params.get('email_type')
+        if email_type_filter:
+            qs = qs.filter(email_type=email_type_filter)
+
+        return qs
+
+
+class AdminEmailLogRetryView(APIView):
+    """POST /api/admin/email-logs/<pk>/retry/ — retry a failed or stale email log row."""
+
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, pk):
+        from orders.email_dispatch import email_log_is_retryable, retry_email_log
+        from orders.serializers.email_log import EmailLogSerializer
+
+        try:
+            email_log = EmailLog.objects.select_related('order', 'recipient_user').get(pk=pk)
+        except EmailLog.DoesNotExist:
+            return Response({'detail': 'Email log not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not email_log_is_retryable(email_log):
+            return Response(
+                {
+                    'detail': (
+                        'Este correo no se puede reintentar todavía. '
+                        'Solo se reintentan los correos fallidos o los que llevan '
+                        'demasiado tiempo sin enviarse.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        retry_email_log(email_log)
+
+        # Re-fetch after retry dispatch updates the row
+        email_log.refresh_from_db()
+        return Response(EmailLogSerializer(email_log).data, status=status.HTTP_200_OK)

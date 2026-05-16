@@ -11,3 +11,7 @@ EMAIL_USE_TLS = env('EMAIL_USE_TLS', default=True)
 
 EMAIL_CONFIRMATION_EXPIRE_DAYS = env('EMAIL_CONFIRMATION_EXPIRE_DAYS', default=1)
 EMAIL_CONFIRMATION_COOLDOWN = env('EMAIL_CONFIRMATION_COOLDOWN', default=180)
+
+# SMTP socket timeout in seconds (used by email_utils.py).
+# Lower values prevent slow SMTP servers from blocking IPN/checkout threads.
+EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', default=10))

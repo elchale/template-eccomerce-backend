@@ -1,0 +1,13 @@
+ALERTA: Monto incorrecto en IPN de Izipay
+
+El IPN de Izipay reportó un monto distinto al esperado.
+El pedido permanece sin pagar. Revisa en el back-office de Izipay.
+
+DETALLES
+========
+Pedido:          #{{ order.order_number }}
+Cliente:         {{ order.user.email|default:"—" }}
+Monto esperado:  {{ expected_centimos }} céntimos ({{ order.currency_code }} {{ expected_soles|floatformat:2 }})
+Monto recibido:  {{ received_centimos }} céntimos ({{ order.currency_code }} {{ received_soles|floatformat:2 }})
+
+{% if admin_order_url %}Ver pedido: {{ admin_order_url }}{% endif %}

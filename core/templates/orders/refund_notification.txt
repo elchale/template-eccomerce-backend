@@ -1,0 +1,8 @@
+Procesamos tu reembolso
+
+Procesamos el reembolso de tu pedido #{{ order.order_number }}.
+El monto puede tardar unos días hábiles en reflejarse según tu banco.
+
+Monto reembolsado: {{ order.currency_code }} {{ order.total }}
+
+Si tienes alguna pregunta sobre tu reembolso, no dudes en contactarnos.

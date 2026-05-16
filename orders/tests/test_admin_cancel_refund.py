@@ -51,6 +51,13 @@ def pending_unpaid_order(db, paid_user):
     )
 
 
+@pytest.fixture(autouse=True)
+def mock_dispatch():
+    """Patch dispatch_order_email for all tests in this module so no SMTP / Celery calls."""
+    with patch('orders.email_dispatch.dispatch_order_email') as m:
+        yield m
+
+
 @pytest.mark.django_db
 class TestAdminCancelWithReason:
     def test_cancel_requires_reason(self, admin_client, pending_unpaid_order):

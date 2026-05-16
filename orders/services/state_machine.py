@@ -3,7 +3,7 @@
 Encodes allowed transitions and performs them atomically:
   1. Validates the transition (raises InvalidTransition → 400)
   2. Writes an OrderStatusHistory row
-  3. Enqueues send_order_status_changed.delay()
+  3. Dispatches send_order_status_changed via dispatch_order_email (on_commit)
 
 Izipay refund side-effects remain in the view layer — the machine only
 handles pure state transitions.
@@ -61,12 +61,23 @@ class OrderStateMachine:
                 changed_by=user,
             )
 
-        # Enqueue email notification outside the atomic block
+        # Dispatch email notification via dispatch_order_email (commit-deferred,
+        # non-blocking, with EmailLog tracking).
         try:
             from orders.tasks import send_order_status_changed
-            send_order_status_changed.delay(order.id, old_status, new_status)
+            import orders.email_dispatch as _ed
+
+            _ed.dispatch_order_email(
+                send_order_status_changed,
+                order.id,
+                old_status,
+                new_status,
+                changed_by_id=user.id if user else None,
+                order_id=order.id,
+                email_type='customer_status_update',
+            )
         except Exception as exc:
             logger.warning(
-                'Could not enqueue status-change email for order %s: %s',
+                'OrderStateMachine: could not dispatch status-change email for order %s: %s',
                 order.order_number, exc,
             )

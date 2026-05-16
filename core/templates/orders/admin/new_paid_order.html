@@ -1,0 +1,67 @@
+{% extends "base_layout.html" %}
+
+{% block email_title %}[Pedido pagado] #{{ order.order_number }} — {{ order.currency_code }} {{ order.total }}{% endblock %}
+
+{% block preheader %}<span style="display:none;font-size:1px;color:#fff;max-height:0">Nuevo pedido pagado: #{{ order.order_number }} — {{ order.currency_code }} {{ order.total }}</span>{% endblock %}
+
+{% block content %}
+<p style="font-size:20px;font-weight:700;color:#111;margin:0 0 8px 0;">[Admin] Nuevo pedido pagado</p>
+<p style="color:#555;margin:0 0 24px 0;">Se recibió el pago para el pedido <strong>#{{ order.order_number }}</strong>.</p>
+
+<div style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+    <table style="width:100%;border-collapse:collapse;">
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;width:40%;">Cliente</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;font-weight:600;">{{ order.user.get_full_name|default:order.user.email }}</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Email</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;">{{ order.email|default:order.user.email }}</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Total</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;font-weight:700;">{{ order.currency_code }} {{ order.total }}</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Método de pago</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;">{{ order.payment_method|default:"—" }}</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Transaction ID</td>
+            <td style="padding:6px 0;font-size:13px;color:#555;word-break:break-all;">{{ order.izipay_transaction_id|default:"—" }}</td>
+        </tr>
+    </table>
+</div>
+
+<!-- Items -->
+<p style="font-size:14px;font-weight:700;color:#111;margin:0 0 8px 0;">Productos</p>
+<table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+    <thead>
+        <tr style="border-bottom:2px solid #eee;">
+            <th style="text-align:left;padding:8px 0;color:#111;font-size:13px;">Producto</th>
+            <th style="text-align:right;padding:8px 0;color:#111;font-size:13px;">Cant.</th>
+            <th style="text-align:right;padding:8px 0;color:#111;font-size:13px;">Precio</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr style="border-bottom:1px solid #f0f0f0;">
+            <td style="padding:10px 0;color:#333;font-size:14px;">{{ item.product_name }}{% if item.variant_info %} <span style="color:#999;">({{ item.variant_info }})</span>{% endif %}</td>
+            <td style="padding:10px 0;text-align:right;color:#333;font-size:14px;">{{ item.quantity }}</td>
+            <td style="padding:10px 0;text-align:right;color:#333;font-size:14px;">{{ order.currency_code }} {{ item.price }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if order.shipping_address %}
+<p style="font-size:14px;color:#555;margin:0 0 4px 0;"><strong>Dirección de envío:</strong></p>
+<p style="font-size:14px;color:#555;margin:0 0 24px 0;">{{ order.shipping_address }}</p>
+{% endif %}
+
+{% if admin_order_url %}
+<p style="margin:0;">
+    <a href="{{ admin_order_url }}" style="display:inline-block;background:linear-gradient(to right,#007aff,#007aff);background-color:#007aff;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;">Ver pedido en el panel</a>
+</p>
+{% endif %}
+{% endblock %}

@@ -1,10 +1,13 @@
 """IPN handler tests for orders/views_payment.py — ADR §11.1 (cases 1–12).
 
 All cases use the test HMAC key from conftest so no real Izipay API is called.
+After the ADR email overhaul, the view calls dispatch_order_email() instead of
+raw task.delay(). Tests mock dispatch_order_email and assert it was called with
+the right task + args.
 """
 import json
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 from django.urls import reverse
@@ -54,10 +57,9 @@ def post_ipn_form(client, payload: dict):
 @pytest.mark.django_db
 def test_ipn_paid_happy_path(client, pending_order, valid_ipn_payload):
     """Case 1: PAID IPN creates Payment, confirms order, logs IpnEvent('paid')."""
-    with patch('orders.views_payment.send_payment_received_email') as mock_email, \
-         patch('orders.views_payment.notify_admin_payment_received') as mock_admin, \
-         patch('orders.views_payment.send_refund_email'):
+    from orders.tasks import notify_admin_payment_received, send_payment_received_email
 
+    with patch('orders.views_payment.dispatch_order_email') as mock_dispatch:
         resp = post_ipn_json(client, valid_ipn_payload)
 
     assert resp.status_code == 200
@@ -77,9 +79,20 @@ def test_ipn_paid_happy_path(client, pending_order, valid_ipn_payload):
     event = IpnEvent.objects.get(order_number=pending_order.order_number)
     assert event.processed_outcome == 'paid'
 
-    # Tasks queued
-    mock_email.delay.assert_called_once_with(pending_order.id)
-    mock_admin.delay.assert_called_once_with(pending_order.id)
+    # dispatch_order_email called for customer + admin notifications
+    assert mock_dispatch.call_count == 2
+    mock_dispatch.assert_any_call(
+        send_payment_received_email,
+        pending_order.id,
+        order_id=pending_order.id,
+        email_type='customer_payment_received',
+    )
+    mock_dispatch.assert_any_call(
+        notify_admin_payment_received,
+        pending_order.id,
+        order_id=pending_order.id,
+        email_type='admin_new_paid_order',
+    )
 
 
 # ===========================================================================
@@ -88,10 +101,7 @@ def test_ipn_paid_happy_path(client, pending_order, valid_ipn_payload):
 @pytest.mark.django_db
 def test_ipn_duplicate_paid(client, pending_order, valid_ipn_payload):
     """Case 2: Duplicate PAID IPN is idempotent — no second Payment row."""
-    with patch('orders.views_payment.send_payment_received_email'), \
-         patch('orders.views_payment.notify_admin_payment_received'), \
-         patch('orders.views_payment.send_refund_email'):
-
+    with patch('orders.views_payment.dispatch_order_email'):
         post_ipn_json(client, valid_ipn_payload)
         resp2 = post_ipn_json(client, valid_ipn_payload)
 
@@ -113,6 +123,8 @@ def test_ipn_duplicate_paid(client, pending_order, valid_ipn_payload):
 @pytest.mark.django_db
 def test_ipn_refunded(client, pending_order, patch_izipay_settings):
     """Case 3: REFUNDED IPN transitions payment_status to refunded."""
+    from orders.tasks import send_refund_email
+
     # First mark the order as paid so we can test refund
     pending_order.payment_status = 'paid'
     pending_order.save(update_fields=['payment_status', 'updated'])
@@ -123,7 +135,7 @@ def test_ipn_refunded(client, pending_order, patch_izipay_settings):
         amount_centimos=1000,
     )
 
-    with patch('orders.views_payment.send_refund_email') as mock_refund:
+    with patch('orders.views_payment.dispatch_order_email') as mock_dispatch:
         resp = post_ipn_json(client, payload)
 
     assert resp.status_code == 200
@@ -133,7 +145,12 @@ def test_ipn_refunded(client, pending_order, patch_izipay_settings):
 
     event = IpnEvent.objects.filter(order_number=pending_order.order_number).last()
     assert event.processed_outcome == 'refunded'
-    mock_refund.delay.assert_called_once_with(pending_order.id)
+    mock_dispatch.assert_called_once_with(
+        send_refund_email,
+        pending_order.id,
+        order_id=pending_order.id,
+        email_type='customer_refund',
+    )
 
 
 # ===========================================================================
@@ -142,13 +159,15 @@ def test_ipn_refunded(client, pending_order, patch_izipay_settings):
 @pytest.mark.django_db
 def test_ipn_cancelled(client, pending_order, patch_izipay_settings):
     """Case 4: CANCELLED IPN sets payment_status=refunded, logs 'cancelled'."""
+    from orders.tasks import send_refund_email
+
     payload = make_valid_ipn_payload(
         order_number=pending_order.order_number,
         order_status='CANCELLED',
         amount_centimos=1000,
     )
 
-    with patch('orders.views_payment.send_refund_email') as mock_refund:
+    with patch('orders.views_payment.dispatch_order_email') as mock_dispatch:
         resp = post_ipn_json(client, payload)
 
     assert resp.status_code == 200
@@ -158,7 +177,12 @@ def test_ipn_cancelled(client, pending_order, patch_izipay_settings):
 
     event = IpnEvent.objects.filter(order_number=pending_order.order_number).last()
     assert event.processed_outcome == 'cancelled'
-    mock_refund.delay.assert_called_once_with(pending_order.id)
+    mock_dispatch.assert_called_once_with(
+        send_refund_email,
+        pending_order.id,
+        order_id=pending_order.id,
+        email_type='customer_refund',
+    )
 
 
 # ===========================================================================
@@ -243,7 +267,8 @@ def test_ipn_password_mode_accepted(client, pending_order):
     )
     payload['kr-hash-key'] = 'password'
 
-    resp = post_ipn_json(client, payload)
+    with patch('orders.views_payment.dispatch_order_email'):
+        resp = post_ipn_json(client, payload)
     assert resp.status_code == 200
 
     pending_order.refresh_from_db()
@@ -276,13 +301,15 @@ def test_ipn_unknown_hash_key_rejected(client, pending_order, valid_ipn_payload)
 @pytest.mark.django_db
 def test_ipn_amount_mismatch(client, pending_order, patch_izipay_settings):
     """Case 9: PAID IPN with wrong amount returns 200, leaves order unpaid, queues admin alert."""
+    from orders.tasks import send_admin_amount_mismatch_alert
+
     payload = make_valid_ipn_payload(
         order_number=pending_order.order_number,
         order_status='PAID',
         amount_centimos=999,  # expected is 1000 (10.00 * 100)
     )
 
-    with patch('orders.views_payment.send_admin_amount_mismatch_alert') as mock_alert:
+    with patch('orders.views_payment.dispatch_order_email') as mock_dispatch:
         resp = post_ipn_json(client, payload)
 
     assert resp.status_code == 200
@@ -295,7 +322,12 @@ def test_ipn_amount_mismatch(client, pending_order, patch_izipay_settings):
     assert 'expected=1000' in event.error_detail
     assert 'received=999' in event.error_detail
 
-    mock_alert.delay.assert_called_once_with(pending_order.id, 1000, 999)
+    mock_dispatch.assert_called_once_with(
+        send_admin_amount_mismatch_alert,
+        pending_order.id, 1000, 999,
+        order_id=pending_order.id,
+        email_type='admin_amount_mismatch',
+    )
 
 
 # ===========================================================================
@@ -314,10 +346,7 @@ def test_ipn_get_liveness(client):
 @pytest.mark.django_db
 def test_ipn_json_body(client, pending_order, valid_ipn_payload):
     """Case 11: JSON body with application/json content-type is processed correctly."""
-    with patch('orders.views_payment.send_payment_received_email'), \
-         patch('orders.views_payment.notify_admin_payment_received'), \
-         patch('orders.views_payment.send_refund_email'):
-
+    with patch('orders.views_payment.dispatch_order_email'):
         resp = client.post(
             IPN_URL,
             data=json.dumps(valid_ipn_payload),
@@ -356,10 +385,7 @@ def test_ipn_form_encoded_body(client, pending_order, patch_izipay_settings):
         'kr-answer': kr_answer_raw,
     }
 
-    with patch('orders.views_payment.send_payment_received_email'), \
-         patch('orders.views_payment.notify_admin_payment_received'), \
-         patch('orders.views_payment.send_refund_email'):
-
+    with patch('orders.views_payment.dispatch_order_email'):
         resp = post_ipn_form(client, form_data)
 
     assert resp.status_code == 200
@@ -442,10 +468,7 @@ def test_ipn_yape_payment_method(client, pending_order, patch_izipay_settings):
         method_type='E_WALLET',
     )
 
-    with patch('orders.views_payment.send_payment_received_email'), \
-         patch('orders.views_payment.notify_admin_payment_received'), \
-         patch('orders.views_payment.send_refund_email'):
-
+    with patch('orders.views_payment.dispatch_order_email'):
         resp = post_ipn_json(client, payload)
 
     assert resp.status_code == 200
@@ -472,10 +495,7 @@ def test_ipn_clears_cart_on_paid(client, pending_order, valid_ipn_payload, paid_
 
     assert CartItem.objects.filter(cart=cart).count() == 1
 
-    with patch('orders.views_payment.send_payment_received_email'), \
-         patch('orders.views_payment.notify_admin_payment_received'), \
-         patch('orders.views_payment.send_refund_email'):
-
+    with patch('orders.views_payment.dispatch_order_email'):
         post_ipn_json(client, valid_ipn_payload)
 
     assert CartItem.objects.filter(cart=cart).count() == 0
@@ -487,10 +507,7 @@ def test_ipn_clears_cart_on_paid(client, pending_order, valid_ipn_payload, paid_
 @pytest.mark.django_db
 def test_ipn_auto_confirms_order(client, pending_order, valid_ipn_payload):
     """BP6: Order auto-transitions to confirmed on PAID IPN."""
-    with patch('orders.views_payment.send_payment_received_email'), \
-         patch('orders.views_payment.notify_admin_payment_received'), \
-         patch('orders.views_payment.send_refund_email'):
-
+    with patch('orders.views_payment.dispatch_order_email'):
         post_ipn_json(client, valid_ipn_payload)
 
     pending_order.refresh_from_db()

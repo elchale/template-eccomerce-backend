@@ -1,0 +1,46 @@
+{% extends "base_layout.html" %}
+
+{% block email_title %}[Pedido #{{ order.order_number }}] {{ old_status_display }} → {{ new_status_display }}{% endblock %}
+
+{% block preheader %}<span style="display:none;font-size:1px;color:#fff;max-height:0">Pedido #{{ order.order_number }}: {{ old_status_display }} → {{ new_status_display }}</span>{% endblock %}
+
+{% block content %}
+<p style="font-size:20px;font-weight:700;color:#111;margin:0 0 8px 0;">[Admin] Cambio de estado de pedido</p>
+<p style="color:#555;margin:0 0 24px 0;">El pedido <strong>#{{ order.order_number }}</strong> cambió de estado.</p>
+
+<div style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+    <table style="width:100%;border-collapse:collapse;">
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;width:40%;">Estado anterior</td>
+            <td style="padding:6px 0;font-size:14px;color:#555;font-weight:600;">{{ old_status_display }}</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Nuevo estado</td>
+            <td style="padding:6px 0;font-size:14px;color:#007aff;font-weight:700;">{{ new_status_display }}</td>
+        </tr>
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Accionado por</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;">{{ changed_by_display }}</td>
+        </tr>
+        {% if customer_email %}
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Email cliente</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;">{{ customer_email }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td style="padding:6px 0;font-size:14px;color:#777;">Total del pedido</td>
+            <td style="padding:6px 0;font-size:14px;color:#111;font-weight:700;">{{ order.currency_code }} {{ order.total }}</td>
+        </tr>
+    </table>
+    {% if note %}
+    <p style="font-size:14px;color:#555;margin:16px 0 0 0;border-top:1px solid #e0e0e0;padding-top:12px;">{{ note }}</p>
+    {% endif %}
+</div>
+
+{% if admin_order_url %}
+<p style="margin:0;">
+    <a href="{{ admin_order_url }}" style="display:inline-block;background:linear-gradient(to right,#007aff,#007aff);background-color:#007aff;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;">Ver pedido en el panel</a>
+</p>
+{% endif %}
+{% endblock %}

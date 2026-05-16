@@ -1,0 +1,17 @@
+{% extends "base_layout.html" %}
+
+{% block email_title %}Reembolso procesado — Pedido #{{ order.order_number }}{% endblock %}
+
+{% block preheader %}<span style="display:none;font-size:1px;color:#fff;max-height:0">Procesamos el reembolso de tu pedido #{{ order.order_number }}.</span>{% endblock %}
+
+{% block content %}
+<p style="font-size:20px;font-weight:700;color:#111;margin:0 0 8px 0;">Procesamos tu reembolso</p>
+<p style="color:#555;margin:0 0 24px 0;">Procesamos el reembolso de tu pedido <strong>#{{ order.order_number }}</strong>. El monto puede tardar unos días hábiles en reflejarse según tu banco.</p>
+
+<div style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+    <p style="font-size:14px;color:#777;margin:0 0 8px 0;">Monto reembolsado:</p>
+    <p style="font-size:18px;font-weight:700;color:#111;margin:0;">{{ order.currency_code }} {{ order.total }}</p>
+</div>
+
+<p style="font-size:14px;color:#777;margin:0;">Si tienes alguna pregunta sobre tu reembolso, no dudes en contactarnos.</p>
+{% endblock %}

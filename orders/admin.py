@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from orders.models import Cart, CartItem, IpnEvent, Order, OrderItem, OrderStatusHistory, Payment
+from orders.models import Cart, CartItem, EmailLog, IpnEvent, Order, OrderItem, OrderStatusHistory, Payment
 
 
 class OrderItemInline(admin.TabularInline):
@@ -73,6 +73,36 @@ class PaymentAdmin(admin.ModelAdmin):
     search_fields = ['order__order_number', 'transaction_id']
     readonly_fields = ['order', 'method', 'amount', 'status', 'transaction_id', 'raw_response', 'created', 'updated']
     ordering = ['-created']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EmailLog)
+class EmailLogAdmin(admin.ModelAdmin):
+    """Read-mostly audit log of all dispatched order emails."""
+    list_display = [
+        'id', 'email_type', 'get_email_type_display_col', 'recipient_email',
+        'status', 'attempts', 'created',
+    ]
+    list_filter = ['status', 'email_type', 'created']
+    search_fields = ['recipient_email', 'subject', 'order__order_number']
+    readonly_fields = [
+        'email_type', 'template_name', 'subject', 'recipient_user', 'recipient_email',
+        'order', 'status', 'task_name', 'task_args', 'error_message',
+        'attempts', 'sent_at', 'last_attempt_at', 'created', 'updated',
+    ]
+    ordering = ['-created']
+
+    @admin.display(description='Objetivo')
+    def get_email_type_display_col(self, obj):
+        return obj.get_email_type_display()
 
     def has_add_permission(self, request):
         return False

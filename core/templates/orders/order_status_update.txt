@@ -1,0 +1,11 @@
+Actualización de tu pedido
+
+Tu pedido #{{ order.order_number }} cambió de estado.
+
+{% if old_status_display %}Estado anterior: {{ old_status_display }}
+{% endif %}Nuevo estado: {{ new_status_display }}
+{% if note %}
+{{ note }}
+{% endif %}
+
+Si tienes alguna pregunta, no dudes en contactarnos.

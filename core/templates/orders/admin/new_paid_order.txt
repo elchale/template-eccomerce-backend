@@ -1,0 +1,27 @@
+[Admin] Nuevo pedido pagado
+
+Se recibió el pago para el pedido #{{ order.order_number }}.
+
+DETALLES
+========
+Cliente:        {{ order.user.get_full_name|default:order.user.email }}
+Email:          {{ order.email|default:order.user.email }}
+Total:          {{ order.currency_code }} {{ order.total }}
+Método:         {{ order.payment_method|default:"—" }}
+Transaction ID: {{ order.izipay_transaction_id|default:"—" }}
+
+PRODUCTOS
+=========
+{% for item in items %}
+{{ item.product_name }}{% if item.variant_info %} ({{ item.variant_info }}){% endif %}
+  Cantidad: {{ item.quantity }}
+  Precio:   {{ order.currency_code }} {{ item.price }}
+{% endfor %}
+
+{% if order.shipping_address %}
+DIRECCIÓN DE ENVÍO
+==================
+{{ order.shipping_address }}
+{% endif %}
+
+{% if admin_order_url %}Ver pedido: {{ admin_order_url }}{% endif %}

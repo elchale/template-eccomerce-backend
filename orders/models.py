@@ -334,6 +334,76 @@ class Payment(BaseModel):
         return f"Payment {self.id} for {self.order.order_number} [{self.get_status_display()}]"
 
 
+class EmailLog(BaseModel):
+    """Persistent audit log for every order email dispatched.
+
+    One row per logical email event. Re-renders on retry from live
+    template + order data — the body is NOT stored.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pendiente'
+        RETRYING = 'retrying', 'Reintentando'
+        CONFIRMED = 'confirmed', 'Confirmado'
+        FAILED = 'failed', 'Fallido'
+
+    class EmailType(models.TextChoices):
+        CUSTOMER_PAYMENT_RECEIVED = 'customer_payment_received', 'Pago confirmado — cliente'
+        CUSTOMER_STATUS_UPDATE = 'customer_status_update', 'Actualización de estado — cliente'
+        CUSTOMER_REFUND = 'customer_refund', 'Reembolso procesado — cliente'
+        ADMIN_NEW_PAID_ORDER = 'admin_new_paid_order', 'Nuevo pedido pagado — administrador'
+        ADMIN_STATUS_UPDATE = 'admin_status_update', 'Actualización de estado — administrador'
+        ADMIN_AMOUNT_MISMATCH = 'admin_amount_mismatch', 'Alerta de monto incorrecto — administrador'
+
+    email_type = models.CharField(
+        max_length=50,
+        choices=EmailType.choices,
+        db_index=True,
+    )
+    template_name = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255)
+    recipient_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_logs',
+    )
+    recipient_email = models.EmailField()
+    order = models.ForeignKey(
+        'Order',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_logs',
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    task_name = models.CharField(max_length=255)
+    task_args = models.JSONField(default=dict)
+    error_message = models.TextField(blank=True, default='')
+    attempts = models.PositiveSmallIntegerField(default=0)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created']
+        indexes = [
+            models.Index(fields=['status'], name='emaillog_status_idx'),
+            models.Index(fields=['email_type', 'status'], name='emaillog_type_status_idx'),
+        ]
+        verbose_name = 'Email Log'
+        verbose_name_plural = 'Email Logs'
+
+    def __str__(self):
+        return f"EmailLog {self.id}: {self.email_type} → {self.recipient_email} [{self.status}]"
+
+
 class IpnEvent(BaseModel):
     """Write-only audit ledger for every Izipay IPN received.
 

@@ -1,13 +1,13 @@
 {% extends "base_layout.html" %}
 {% load site_config %}
 
-{% block email_title %}Confirmamos tu pedido #{{ order.order_number }}{% endblock %}
+{% block email_title %}Pago confirmado — Pedido #{{ order.order_number }}{% endblock %}
 
-{% block preheader %}<span style="display:none;font-size:1px;color:#fff;max-height:0">Gracias por tu compra. Tu pedido #{{ order.order_number }} fue confirmado.</span>{% endblock %}
+{% block preheader %}<span style="display:none;font-size:1px;color:#fff;max-height:0">Confirmamos tu pago. Tu pedido #{{ order.order_number }} está en camino a prepararse.</span>{% endblock %}
 
 {% block content %}
-<p style="font-size:20px;font-weight:700;color:#111;margin:0 0 8px 0;">¡Gracias por tu pedido!</p>
-<p style="color:#555;margin:0 0 24px 0;">Hemos recibido tu pedido <strong>#{{ order.order_number }}</strong> y lo estamos procesando.</p>
+<p style="font-size:20px;font-weight:700;color:#111;margin:0 0 8px 0;">¡Tu pago fue confirmado!</p>
+<p style="color:#555;margin:0 0 24px 0;">Recibimos tu pago y tu pedido <strong>#{{ order.order_number }}</strong> ya está confirmado. Te avisaremos cuando lo enviemos.</p>
 
 <!-- Order summary table -->
 <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">

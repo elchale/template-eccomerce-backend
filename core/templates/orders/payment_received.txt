@@ -1,6 +1,7 @@
-¡Gracias por tu pedido!
+¡Tu pago fue confirmado!
 
-Hemos recibido tu pedido #{{ order.order_number }} y lo estamos procesando.
+Recibimos tu pago y tu pedido #{{ order.order_number }} ya está confirmado.
+Te avisaremos cuando lo enviemos.
 
 RESUMEN DEL PEDIDO
 ==================
@@ -21,4 +22,4 @@ DIRECCIÓN DE ENVÍO
 {{ order.shipping_address }}
 {% endif %}
 
-Si tienes alguna pregunta, no dudes en contactarnos.
+Si tienes alguna pregunta sobre tu pedido, no dudes en contactarnos.

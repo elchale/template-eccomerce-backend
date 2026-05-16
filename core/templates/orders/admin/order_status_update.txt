@@ -1,0 +1,15 @@
+[Admin] Cambio de estado de pedido
+
+El pedido #{{ order.order_number }} cambió de estado.
+
+Estado anterior: {{ old_status_display }}
+Nuevo estado:    {{ new_status_display }}
+Accionado por:   {{ changed_by_display }}
+{% if customer_email %}Email cliente:   {{ customer_email }}
+{% endif %}Total del pedido: {{ order.currency_code }} {{ order.total }}
+{% if note %}
+Nota:
+{{ note }}
+{% endif %}
+
+{% if admin_order_url %}Ver pedido: {{ admin_order_url }}{% endif %}

@@ -1,0 +1,22 @@
+{% extends "base_layout.html" %}
+
+{% block email_title %}Tu pedido #{{ order.order_number }} ahora está {{ new_status_display }}{% endblock %}
+
+{% block preheader %}<span style="display:none;font-size:1px;color:#fff;max-height:0">Tu pedido #{{ order.order_number }} cambió a {{ new_status_display }}.</span>{% endblock %}
+
+{% block content %}
+<p style="font-size:20px;font-weight:700;color:#111;margin:0 0 8px 0;">Actualización de tu pedido</p>
+<p style="color:#555;margin:0 0 24px 0;">Tu pedido <strong>#{{ order.order_number }}</strong> cambió de estado.</p>
+
+<div style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+    {% if old_status_display %}
+    <p style="font-size:14px;color:#777;margin:0 0 8px 0;">Estado anterior: <span style="font-weight:600;color:#555;">{{ old_status_display }}</span></p>
+    {% endif %}
+    <p style="font-size:16px;color:#111;margin:0;font-weight:700;">Nuevo estado: <span style="color:#007aff;">{{ new_status_display }}</span></p>
+    {% if note %}
+    <p style="font-size:14px;color:#555;margin:12px 0 0 0;">{{ note }}</p>
+    {% endif %}
+</div>
+
+<p style="font-size:14px;color:#777;margin:0;">Si tienes alguna pregunta, no dudes en contactarnos.</p>
+{% endblock %}

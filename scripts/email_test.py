@@ -82,6 +82,7 @@ def _discover_template_names() -> list[str]:
     for rel_dir in (
         Path('account') / 'email',
         Path('accounts'),
+        Path('orders'),
     ):
         folder = templates_root / rel_dir
         if not folder.exists():
@@ -112,6 +113,30 @@ def _build_dummy_context() -> dict:
         domain=getattr(settings, 'DOMAIN', 'example.com')
     )
 
+    # Minimal dummy order context for orders/payment_received.html and siblings.
+    # Uses SimpleNamespace so no DB is required when running --dry-run.
+    dummy_item = SimpleNamespace(
+        product_name='Producto de prueba',
+        variant_info='Talla M',
+        quantity=2,
+        price='49.90',
+    )
+    dummy_order = SimpleNamespace(
+        order_number='QLCA-20260516-TEST',
+        currency_code='PEN',
+        subtotal='99.80',
+        discount_amount='0.00',
+        shipping_amount='0.00',
+        total='99.80',
+        shipping_address='Av. Test 123, Lima, Perú',
+        email='test@example.com',
+        user=dummy_user,
+        payment_method='izipay',
+        izipay_transaction_id='tx-test-uuid-preview',
+        status='confirmed',
+        get_status_display=lambda: 'Confirmed',
+    )
+
     return {
         'user': dummy_user,
         'username': 'test@example.com',
@@ -127,6 +152,21 @@ def _build_dummy_context() -> dict:
         'current_site': current_site,
         'DOMAIN': getattr(settings, 'DOMAIN', 'example.com'),
         'BRAND': getattr(settings, 'PROJECT_NAME', 'Project'),
+        # Order email context
+        'order': dummy_order,
+        'items': [dummy_item],
+        'old_status': 'confirmed',
+        'new_status': 'shipped',
+        'old_status_display': 'Confirmado',
+        'new_status_display': 'Enviado',
+        'note': 'Nota de prueba',
+        'changed_by_display': 'Sistema/IPN',
+        'customer_email': 'test@example.com',
+        'admin_order_url': f"https://{getattr(settings, 'DOMAIN', 'example.com')}/admin/orders/1",
+        'expected_centimos': 10000,
+        'received_centimos': 9999,
+        'expected_soles': 100.00,
+        'received_soles': 99.99,
     }
 
 
