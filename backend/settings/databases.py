@@ -18,6 +18,9 @@ DATABASES = {
         'HOST': env('DB_HOST', default='localhost'),
         'PORT': env('DB_PORT', default=5432),
         'CONN_MAX_AGE': env('DB_CONN_MAX_AGE', default=10),
+        # Neon/PgBouncer does not support server-side cursors; disable them
+        # so Django's test-db serialization (and QuerySet.iterator) work correctly.
+        'DISABLE_SERVER_SIDE_CURSORS': True,
         'TEST': {
             'NAME': _test_db_name,
         },

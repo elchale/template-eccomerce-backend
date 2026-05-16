@@ -118,14 +118,36 @@ def _run_via_thread(task, args: tuple, kwargs: dict) -> None:
     t.start()
 
 
+_BROKER_CONNECT_TIMEOUT = 2  # seconds — hard cap on broker connection attempt
+
+
 def _run_via_celery(task, args: tuple, kwargs: dict) -> bool:
-    """Attempt to dispatch via Celery. Returns True on success, False on failure."""
+    """Attempt to dispatch via Celery with a fast-fail broker probe.
+
+    Returns True on success, False on any failure (caller falls back to thread).
+
+    The connection is acquired explicitly with:
+    - connect_timeout=_BROKER_CONNECT_TIMEOUT: hard cap on the TCP/SSL handshake.
+    - transport_options={'max_retries': 0}: Kombu will not retry on failure —
+      one attempt only, fail immediately.
+
+    This guarantees that a dead or slow AMQP broker never blocks the on_commit
+    callback thread for more than ~_BROKER_CONNECT_TIMEOUT seconds.
+    """
+    from celery import current_app
+
     try:
-        task.apply_async(
-            args=args,
-            kwargs=kwargs,
-            retry=False,
+        conn = current_app.connection_for_write(
+            connect_timeout=_BROKER_CONNECT_TIMEOUT,
+            transport_options={'max_retries': 0},
         )
+        with conn:
+            task.apply_async(
+                args=args,
+                kwargs=kwargs,
+                connection=conn,
+                retry=False,
+            )
         return True
     except Exception as exc:
         logger.warning(
