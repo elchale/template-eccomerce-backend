@@ -38,6 +38,7 @@ class OrderAdmin(admin.ModelAdmin):
     readonly_fields = [
         'uuid', 'order_number', 'subtotal', 'discount_amount', 'total',
         'payment_status', 'payment_method', 'izipay_transaction_id',
+        'culqi_charge_id', 'culqi_order_id', 'mp_payment_id',
         'created', 'updated',
     ]
     inlines = [OrderItemInline, OrderStatusHistoryInline, PaymentInline]
@@ -116,15 +117,19 @@ class EmailLogAdmin(admin.ModelAdmin):
 
 @admin.register(IpnEvent)
 class IpnEventAdmin(admin.ModelAdmin):
-    """Read-only audit ledger of all IPN events received from Izipay (BP5)."""
+    """Read-only audit ledger of all IPN / webhook events received (BP5).
+
+    Gateway-agnostic — records Mercado Pago (active), Culqi (dormant) and
+    Izipay (dormant) events.
+    """
     list_display = [
-        'id', 'order_number', 'processed_outcome', 'order_status',
+        'id', 'gateway', 'order_number', 'processed_outcome', 'order_status',
         'source_ip', 'kr_hash_prefix', 'created',
     ]
-    list_filter = ['processed_outcome', 'order_status', 'created']
+    list_filter = ['gateway', 'processed_outcome', 'order_status', 'created']
     search_fields = ['order_number', 'source_ip', 'kr_hash_prefix']
     readonly_fields = [
-        'source_ip', 'kr_hash_prefix', 'order_number', 'order_status',
+        'gateway', 'source_ip', 'kr_hash_prefix', 'order_number', 'order_status',
         'processed_outcome', 'raw_body', 'error_detail', 'created', 'updated',
     ]
     ordering = ['-created']

@@ -16,6 +16,7 @@ from core.sitemaps import SITEMAPS
 from users.urls import urlpatterns as users_urlpatterns
 from coupons.urls import urlpatterns as coupons_urlpatterns
 from orders.urls import urlpatterns as orders_urlpatterns
+from orders.views_mp import mp_webhook
 from products.urls import urlpatterns as products_urlpatterns
 from marketing.urls import urlpatterns as marketing_urlpatterns
 
@@ -41,6 +42,14 @@ if getattr(settings, 'ENABLE_API_DOCS', settings.DEBUG):
         path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
         path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     ]
+
+# Mercado Pago webhook notifications. Bypasses DRF; project-root path matches
+# what is registered in the MP panel. No trailing slash — MP POSTs exactly
+# `/pay`, and `path('pay/', ...)` would cause Django to 301 to `/pay/` which
+# MP treats as a delivery failure. Must be ABOVE static() to ensure dispatch.
+urlpatterns += [
+    path('pay', mp_webhook, name='mercadopago-webhook'),
+]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 urlpatterns.extend(users_urlpatterns)

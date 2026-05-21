@@ -145,8 +145,15 @@ class Order(BaseModel, UserMixinModel):
         db_index=True,
     )
     payment_method = models.CharField(max_length=20, default='', blank=True)
+    # Izipay fields — retained for the dormant Izipay gateway path.
     izipay_transaction_id = models.CharField(max_length=100, default='', blank=True)
     izipay_form_token_created_at = models.DateTimeField(null=True, blank=True)
+    # Culqi fields — dormant gateway. culqi_charge_id is the captured charge
+    # (chr_…); culqi_order_id is the Culqi Order (ord_…) for alt payment methods.
+    culqi_charge_id = models.CharField(max_length=100, default='', blank=True)
+    culqi_order_id = models.CharField(max_length=100, default='', blank=True)
+    # Mercado Pago payment id (numeric string) — active gateway.
+    mp_payment_id = models.CharField(max_length=100, default='', blank=True, db_index=True)
 
     class Meta:
         ordering = ['-created']
@@ -302,8 +309,10 @@ class Payment(BaseModel):
     We never write 'pending' payments — IPN is the sole source of truth.
     """
     METHOD_CHOICES = [
+        ('mercadopago', 'Mercado Pago'),
+        ('culqi', 'Culqi (tarjeta/Yape)'),
         ('izipay', 'Izipay (tarjeta)'),
-        ('yape', 'Yape (vía Izipay)'),
+        ('yape', 'Yape'),
         ('transfer', 'Transferencia'),
     ]
     STATUS_CHOICES = [
@@ -405,9 +414,11 @@ class EmailLog(BaseModel):
 
 
 class IpnEvent(BaseModel):
-    """Write-only audit ledger for every Izipay IPN received.
+    """Write-only audit ledger for every payment webhook/IPN received.
 
-    BP5: Forensics + replay debugging. Every IPN call creates one row.
+    BP5: Forensics + replay debugging. Every IPN / Culqi webhook call creates
+    one row. The ledger is gateway-agnostic — the ``gateway`` field records
+    whether the event came from Izipay (dormant) or Culqi (active).
     """
     OUTCOME_CHOICES = [
         ('paid', 'Paid'),
@@ -420,11 +431,24 @@ class IpnEvent(BaseModel):
         ('bad_signature', 'Bad Signature'),
         ('no_op', 'No Operation'),
     ]
+    GATEWAY_CHOICES = [
+        ('mercadopago', 'Mercado Pago'),
+        ('culqi', 'Culqi'),
+        ('izipay', 'Izipay'),
+    ]
 
+    gateway = models.CharField(
+        max_length=20,
+        choices=GATEWAY_CHOICES,
+        default='izipay',
+        db_index=True,
+    )
     source_ip = models.CharField(max_length=45)
-    kr_hash_prefix = models.CharField(max_length=8)  # First 8 hex chars for forensics
+    # For Izipay this is the first 8 hex chars of the kr-hash; for Culqi (which
+    # sends no signature header) it is the first 8 chars of the resource id.
+    kr_hash_prefix = models.CharField(max_length=8)
     order_number = models.CharField(max_length=50, db_index=True)
-    order_status = models.CharField(max_length=20, blank=True)  # As received from Izipay
+    order_status = models.CharField(max_length=20, blank=True)  # As received from the gateway
     processed_outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, db_index=True)
     raw_body = models.TextField()  # Truncated to 4096 chars in application logic
     error_detail = models.TextField(blank=True)
