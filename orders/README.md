@@ -17,20 +17,74 @@ Shopping cart, checkout, and order management.
 | GET | `/api/admin/orders/` | IsAdminUser | All orders |
 | GET | `/api/admin/orders/<id>/` | IsAdminUser | Admin order detail |
 | PATCH | `/api/admin/orders/<id>/status/` | IsAdminUser | Update order status |
+| POST | `/api/admin/orders/<id>/refund/` | IsAdminUser | Refund order (Culqi if charged via Culqi, else Izipay) |
 | GET | `/api/admin/dashboard/` | IsAdminUser | Analytics dashboard |
 | GET | `/api/admin/email-logs/` | IsAdminUser | List EmailLog records (filterable by status/email_type) |
 | POST | `/api/admin/email-logs/<id>/retry/` | IsAdminUser | Retry a failed/stale email |
-| POST | `/api/payments/izipay/create-token/` | IsAuthenticated | Create Izipay formToken for order |
-| POST | `/api/payments/izipay/verify/` | IsAuthenticated | Verify client-side payment callback |
-| GET/POST | `/api/payments/izipay/ipn/` | AllowAny + HMAC | IPN webhook (server-to-server) |
+| POST | `/api/payments/culqi/charge/` | IsAuthenticated | Charge a Culqi card/Yape token (synchronous) |
+| POST | `/api/payments/culqi/order/` | IsAuthenticated | Create a Culqi Order for alt payment methods |
+| POST | `/api/payments/culqi/webhook-<secret>/` | AllowAny | Culqi webhook (server-to-server, always 200) |
+| POST | `/api/payments/izipay/create-token/` | IsAuthenticated | Create Izipay formToken for order (dormant) |
+| POST | `/api/payments/izipay/verify/` | IsAuthenticated | Verify client-side payment callback (dormant) |
+| GET/POST | `/api/payments/izipay/ipn/` | AllowAny + HMAC | Izipay IPN webhook (dormant) |
 
-## Izipay Payment Integration
+## Culqi Payment Integration (active gateway)
 
 ### Overview
-Orders are paid via Izipay (card / Yape) using the embedded form (Krypton). The payment flow uses an intermediary router (`izipay-router`) that dispatches IPNs by order-number prefix.
+Culqi (https://culqi.com) is the **active** payment gateway, selected via the
+`PAYMENT_GATEWAY` setting (default `culqi`). The Izipay integration below is
+kept **dormant** — code and endpoints stay registered but the frontend does
+not exercise them while `PAYMENT_GATEWAY=culqi`.
+
+Culqi uses **Checkout Custom** in the browser: card data is tokenized client
+side and never reaches the backend. Two payment paths:
+- **Card / Yape** → browser produces a token → `POST /api/payments/culqi/charge/`
+  charges it synchronously; the charge result is authoritative.
+- **PagoEfectivo / wallets / bank apps / Cuotéalo** → `POST /api/payments/culqi/order/`
+  creates a Culqi Order; the customer pays later and Culqi notifies us via the
+  webhook (`order.status.changed`).
+
+### Webhook
+Culqi sends **no signature header**. Authenticity is established by re-fetching
+the referenced resource (`GET /charges/{id}` / `GET /orders/{id}`) with the
+secret key. The webhook URL path carries an unguessable slug from
+`CULQI_WEBHOOK_PATH_SECRET`. The endpoint is `AllowAny`, CSRF-exempt, idempotent
+and **always returns HTTP 200**. The Culqi account is shared with sibling
+projects, so events for their resources also arrive here — they are self-filtered
+by DB lookup (`metadata.project='qlca'`) and acknowledged with 200.
+
+On a confirmed payment the handler atomically:
+1. Updates `order.payment_status = 'paid'`, stores `culqi_charge_id`
+2. Creates a `Payment` record (method `culqi`/`yape`, status `verified`)
+3. Auto-confirms order: `pending → confirmed`
+4. Clears the user's cart (safety net)
+5. Creates an `IpnEvent` audit record (`gateway='culqi'`)
+6. Queues confirmation + admin notification emails
+
+### Refunds
+`POST /api/admin/orders/<id>/refund/` refunds via **Culqi** when the order has
+a `culqi_charge_id`, else via **Izipay** for legacy Izipay-paid orders.
+
+### Env Vars Required
+```
+PAYMENT_GATEWAY=culqi
+CULQI_PUBLIC_KEY=pk_test_...
+CULQI_SECRET_KEY=sk_test_...
+CULQI_WEBHOOK_PATH_SECRET=<random unguessable slug>
+```
+
+## Izipay Payment Integration (dormant)
+
+### Overview
+Orders were previously paid via Izipay (card / Yape) using the embedded form
+(Krypton). This path is **dormant** — kept as a fallback, selectable by setting
+`PAYMENT_GATEWAY=izipay`. The payment flow uses an intermediary router
+(`izipay-router`) that dispatches IPNs by order-number prefix.
 
 ### Order Number Format
-New orders generate `QLCA-YYYYMMDD-XXXX` via `Order.save()`. The `QLCA` prefix enables the router to dispatch to this service.
+New orders generate `QLCA-YYYYMMDD-XXXX` via `Order.save()`. The `QLCA` prefix
+enables the Izipay router to dispatch to this service (now just a label under
+Culqi — Culqi routes by `metadata`, not the order-number prefix).
 
 ### IPN Flow
 ```

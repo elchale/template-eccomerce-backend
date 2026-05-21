@@ -18,4 +18,6 @@ from .redis import *
 from .email import *
 from .gcs import *
 from .izipay import *
+from .culqi import *
+from .mercadopago import *
 from .sentry import *

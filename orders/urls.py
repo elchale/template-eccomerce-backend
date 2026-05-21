@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.urls import path
 
 from orders.views.cart import (
@@ -21,6 +22,8 @@ from orders.views.orders import (
 )
 from orders.views.analytics import DashboardView
 from orders.views_payment import create_izipay_token, verify_izipay_payment, izipay_ipn
+from orders.views_culqi import create_culqi_charge, create_culqi_order, culqi_webhook
+from orders.views_mp import create_mp_payment
 
 urlpatterns = [
     # Cart
@@ -51,7 +54,22 @@ urlpatterns = [
     # Admin dashboard
     path('api/admin/dashboard/', DashboardView.as_view(), name='admin-dashboard'),
 
-    # Izipay payment endpoints (ADR §5)
+    # Mercado Pago payment endpoints (ACTIVE gateway, see settings.PAYMENT_GATEWAY).
+    # The MP webhook is registered at the project root as `/pay` in backend/urls.py.
+    path('api/payments/mercadopago/process/', create_mp_payment, name='mercadopago-process'),
+
+    # Culqi payment endpoints (DORMANT — kept for fallback, see settings.PAYMENT_GATEWAY)
+    path('api/payments/culqi/charge/', create_culqi_charge, name='culqi-charge'),
+    path('api/payments/culqi/order/', create_culqi_order, name='culqi-order'),
+    # Webhook path carries an unguessable secret slug — keep it in sync with
+    # the URL registered in CulqiPanel → Eventos → Webhooks.
+    path(
+        f'api/payments/culqi/webhook-{settings.CULQI_WEBHOOK_PATH_SECRET}/',
+        culqi_webhook,
+        name='culqi-webhook',
+    ),
+
+    # Izipay payment endpoints (DORMANT — kept for fallback, see settings.PAYMENT_GATEWAY)
     path('api/payments/izipay/create-token/', create_izipay_token, name='izipay-create-token'),
     path('api/payments/izipay/verify/', verify_izipay_payment, name='izipay-verify'),
     path('api/payments/izipay/ipn/', izipay_ipn, name='izipay-ipn'),

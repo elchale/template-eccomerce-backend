@@ -10,7 +10,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from coupons.models import Coupon
+from orders.culqi import CulqiError, create_refund as culqi_create_refund
 from orders.izipay import IzipayError, cancel_or_refund
+from orders.mercadopago import MercadoPagoError, create_refund as mp_create_refund
 from orders.models import Cart, EmailLog, Order, OrderItem, OrderStatusHistory, Refund
 from orders.serializers.orders import (
     AdminOrderRefundSerializer,
@@ -375,7 +377,13 @@ class AdminOrderStatusUpdateView(APIView):
 
 
 class AdminOrderRefundView(APIView):
-    """POST /api/admin/orders/<pk>/refund/ — issue a refund via Izipay.
+    """POST /api/admin/orders/<pk>/refund/ — issue a refund via the gateway.
+
+    Refunds via Mercado Pago when the order has an ``mp_payment_id`` (active
+    gateway), else via Culqi when it has a ``culqi_charge_id`` (dormant
+    gateway), else via Izipay when it has an ``izipay_transaction_id``
+    (dormant gateway). This keeps both legacy Culqi-paid and Izipay-paid
+    orders refundable.
 
     Atomic write: calls the gateway first; on success creates a Refund row,
     flips payment_status='refunded', and queues the customer email. The
@@ -406,9 +414,13 @@ class AdminOrderRefundView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not order.izipay_transaction_id:
+        if (
+            not order.mp_payment_id
+            and not order.culqi_charge_id
+            and not order.izipay_transaction_id
+        ):
             return Response(
-                {'detail': 'El pedido no tiene una transacción Izipay asociada.'},
+                {'detail': 'El pedido no tiene una transacción de pago asociada.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -431,21 +443,53 @@ class AdminOrderRefundView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Gateway call first — if Izipay refuses, we must not write a Refund row.
-        try:
-            gateway_response = cancel_or_refund(
-                order.izipay_transaction_id, int(refund_amount * 100),
+        # Gateway call first — if the gateway refuses, we must not write a
+        # Refund row. Mercado Pago when the order was charged via MP (active
+        # gateway), else Culqi (dormant gateway) for legacy MP-era orders,
+        # else Izipay (dormant gateway) for older legacy orders.
+        external_refund_id = ''
+        if order.mp_payment_id:
+            try:
+                gateway_response = mp_create_refund(
+                    order.mp_payment_id, refund_amount,
+                )
+            except MercadoPagoError as exc:
+                return Response(
+                    {'detail': f'Mercado Pago rechazó el reembolso: {exc}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            external_refund_id = (
+                str(gateway_response.get('id', ''))
+                if isinstance(gateway_response, dict) else ''
             )
-        except IzipayError as exc:
-            return Response(
-                {'detail': f'Izipay rechazó el reembolso: {exc}'},
-                status=status.HTTP_400_BAD_REQUEST,
+        elif order.culqi_charge_id:
+            try:
+                gateway_response = culqi_create_refund(
+                    order.culqi_charge_id, int(refund_amount * 100),
+                )
+            except CulqiError as exc:
+                return Response(
+                    {'detail': f'Culqi rechazó el reembolso: {exc}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            external_refund_id = (
+                gateway_response.get('id', '')
+                if isinstance(gateway_response, dict) else ''
             )
-
-        external_refund_id = (
-            gateway_response.get('answer', {}).get('transactions', [{}])[0].get('uuid', '')
-            if isinstance(gateway_response, dict) else ''
-        )
+        else:
+            try:
+                gateway_response = cancel_or_refund(
+                    order.izipay_transaction_id, int(refund_amount * 100),
+                )
+            except IzipayError as exc:
+                return Response(
+                    {'detail': f'Izipay rechazó el reembolso: {exc}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            external_refund_id = (
+                gateway_response.get('answer', {}).get('transactions', [{}])[0].get('uuid', '')
+                if isinstance(gateway_response, dict) else ''
+            )
 
         with transaction.atomic():
             Refund.objects.create(
