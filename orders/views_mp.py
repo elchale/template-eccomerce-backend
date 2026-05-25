@@ -30,7 +30,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from orders.mercadopago import (
-    MercadoPagoError, create_payment, read_payment, verify_webhook_signature,
+    MercadoPagoError, create_payment, read_payment, resolve_status_detail,
+    verify_webhook_signature,
 )
 from orders.email_dispatch import dispatch_order_email
 from orders.models import Cart, IpnEvent, Order, OrderStatusHistory, Payment
@@ -214,6 +215,9 @@ def create_mp_payment(request):
     identification = payer.get('identification') or {}
     payer_id_type = (identification.get('type') or '').strip()
     payer_id_number = (identification.get('number') or '').strip()
+    # MP Device ID (X-meli-session-id) — improves approval rates. Optional;
+    # an empty/missing value must not break the payment.
+    device_id = (request.data.get('device_id') or '').strip()
 
     if not (order_uuid or order_number) or not token or not payment_method_id:
         return Response(
@@ -244,10 +248,12 @@ def create_mp_payment(request):
             payer_email=payer_email,
             payer_id_type=payer_id_type,
             payer_id_number=payer_id_number,
+            device_id=device_id,
         )
     except MercadoPagoError as exc:
-        # Declined card / antifraud rejection — surface the customer-safe message.
-        return Response({'detail': str(exc)}, status=402)
+        # Declined card / antifraud rejection / API error — surface only the
+        # customer-safe message + safe code. Never echo MP's raw text/code.
+        return Response({'detail': exc.user_message, 'code': exc.code}, status=402)
 
     status_value = (payment.get('status') or '').lower()
     payment_id = str(payment.get('id', ''))
@@ -275,8 +281,14 @@ def create_mp_payment(request):
         })
 
     if status_value == 'rejected':
-        detail = payment.get('status_detail') or 'Pago rechazado.'
-        return Response({'detail': str(detail)}, status=402)
+        # Map MP's raw status_detail (e.g. cc_rejected_high_risk) to a safe
+        # customer message + code. NEVER echo the raw status_detail.
+        message, code = resolve_status_detail(payment.get('status_detail'))
+        logger.info(
+            'Mercado Pago payment for order %s rejected (code=%s)',
+            order.order_number, code,
+        )
+        return Response({'detail': message, 'code': code}, status=402)
 
     # Any other (refunded / charged_back / cancelled / unknown) — leave the
     # order pending; webhook is authoritative.

@@ -9,7 +9,15 @@ not hit the live MP API.
 import hashlib
 import hmac
 
-from orders.mercadopago import verify_webhook_signature
+import pytest
+
+from orders.mercadopago import (
+    _GENERIC_CODE,
+    _GENERIC_MESSAGE,
+    _STATUS_DETAIL_MAP,
+    resolve_status_detail,
+    verify_webhook_signature,
+)
 
 
 # Fixed test secret used in all signature tests.
@@ -117,6 +125,45 @@ def test_verify_webhook_signature_malformed_header():
     assert verify_webhook_signature(
         'not-a-real-header', 'req', '12345678', TEST_WEBHOOK_SECRET,
     ) is False
+
+
+# ---------------------------------------------------------------------------
+# resolve_status_detail — mapped codes, unknown fallback, fraud masking
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize('status_detail', list(_STATUS_DETAIL_MAP.keys()))
+def test_resolve_status_detail_maps_known_codes(status_detail):
+    """Every mapped code returns exactly its (message, code) tuple."""
+    message, code = resolve_status_detail(status_detail)
+    assert (message, code) == _STATUS_DETAIL_MAP[status_detail]
+    assert message and code  # non-empty
+
+
+def test_resolve_status_detail_unknown_falls_back_to_generic():
+    """Unknown codes return the generic message + code, never the raw code."""
+    message, code = resolve_status_detail('cc_rejected_some_brand_new_code')
+    assert message == _GENERIC_MESSAGE
+    assert code == _GENERIC_CODE
+    assert 'cc_rejected_some_brand_new_code' not in message
+
+
+def test_resolve_status_detail_none_falls_back_to_generic():
+    """None / empty status_detail returns the generic message + code."""
+    assert resolve_status_detail(None) == (_GENERIC_MESSAGE, _GENERIC_CODE)
+    assert resolve_status_detail('') == (_GENERIC_MESSAGE, _GENERIC_CODE)
+
+
+@pytest.mark.parametrize('fraud_code', ['cc_rejected_high_risk', 'cc_rejected_blacklist'])
+def test_resolve_status_detail_masks_fraud_reasons(fraud_code):
+    """Fraud rejections must not reveal the reason to the customer."""
+    message, code = resolve_status_detail(fraud_code)
+    lowered = message.lower()
+    assert 'riesgo' not in lowered
+    assert 'fraude' not in lowered
+    assert 'blacklist' not in lowered
+    assert 'lista negra' not in lowered
+    # The raw MP code is never echoed.
+    assert fraud_code not in message
+    assert code == 'declined'
 
 
 def test_verify_webhook_signature_normalises_alphanumeric_id():
