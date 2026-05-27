@@ -26,6 +26,8 @@ from orders.tasks import send_refund_email
 from orders.email_dispatch import dispatch_order_email
 from orders.services.state_machine import OrderStateMachine
 from orders.exceptions import InvalidTransition
+from products.pricing import effective_unit_price, get_active_promo_for_product
+from products.views.products import _get_active_promotions as _fetch_active_promos
 
 
 class CheckoutView(APIView):
@@ -60,11 +62,22 @@ class CheckoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Calculate subtotal
+        # Resolve active marketing promotions ONCE so each cart line is priced
+        # with its applicable Promocion (batch fetch avoids N+1).
+        active_promos = _fetch_active_promos()
+        item_unit_price = {}
+        for item in cart_items:
+            promo = get_active_promo_for_product(
+                item.product, active_promos=active_promos
+            )
+            item_unit_price[item.pk] = effective_unit_price(
+                item.product, item.variant, promo
+            )
+
+        # Calculate subtotal from the promo-discounted unit prices.
         subtotal = Decimal('0.00')
         for item in cart_items:
-            price = item.variant.price if item.variant else item.product.base_price
-            subtotal += price * item.quantity
+            subtotal += item_unit_price[item.pk] * item.quantity
 
         # Validate coupon format if provided (pre-atomic checks only)
         coupon_code = data.get('coupon_code', '').strip()
@@ -177,7 +190,9 @@ class CheckoutView(APIView):
             # Create order items with snapshot data
             order_items = []
             for item in cart_items:
-                price = item.variant.price if item.variant else item.product.base_price
+                # Immutable snapshot of what was actually charged: the
+                # promo-discounted effective unit price (NOT base_price).
+                price = item_unit_price[item.pk]
 
                 # Get product image using prefetched data to avoid N+1 queries.
                 product_images = list(item.product.images.all())

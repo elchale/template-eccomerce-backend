@@ -1,9 +1,32 @@
 from decimal import Decimal
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from orders.models import Cart, CartItem
 from products.models import Product, ProductVariant
+from products.pricing import effective_unit_price, get_active_promo_for_product
+
+
+def _fetch_active_promos():
+    """Fetch currently-active promotions once, with prefetched M2M relations,
+    sorted by ``-prioridad`` — mirrors products/views batch approach to avoid
+    N+1 lookups when pricing a cart."""
+    try:
+        from marketing.models import Promocion
+    except ImportError:
+        return []
+
+    now = timezone.now()
+    return list(
+        Promocion.objects.filter(
+            es_activo=True,
+            fecha_inicio__lte=now,
+            fecha_fin__gte=now,
+        )
+        .prefetch_related('productos', 'categorias')
+        .order_by('-prioridad')
+    )
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -37,14 +60,28 @@ class CartItemSerializer(serializers.ModelSerializer):
             return primary.image_url
         return images[0].image_url if images else ''
 
+    def _active_promos(self):
+        """Active promos for promo resolution. Prefer the parent serializer's
+        prefetched list (passed via context) so the whole cart shares one
+        query; fall back to a per-instance fetch if used standalone."""
+        promos = self.context.get('active_promos')
+        if promos is not None:
+            return promos
+        if not hasattr(self, '_cached_active_promos'):
+            self._cached_active_promos = _fetch_active_promos()
+        return self._cached_active_promos
+
+    def _effective_unit_price(self, obj):
+        promo = get_active_promo_for_product(
+            obj.product, active_promos=self._active_promos()
+        )
+        return effective_unit_price(obj.product, obj.variant, promo)
+
     def get_unit_price(self, obj):
-        if obj.variant:
-            return str(obj.variant.price)
-        return str(obj.product.base_price)
+        return str(self._effective_unit_price(obj))
 
     def get_line_total(self, obj):
-        price = obj.variant.price if obj.variant else obj.product.base_price
-        return str(price * obj.quantity)
+        return str(self._effective_unit_price(obj) * obj.quantity)
 
     def get_variant_info(self, obj):
         if not obj.variant:
@@ -136,14 +173,24 @@ class CartSerializer(serializers.ModelSerializer):
         model = Cart
         fields = ['id', 'items', 'subtotal', 'item_count', 'created', 'updated']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Fetch active promos ONCE for the whole cart and share the list with
+        # the nested CartItemSerializer via context (avoids N+1 per item).
+        if 'active_promos' not in self.context:
+            self.context['active_promos'] = _fetch_active_promos()
+
     def get_subtotal(self, obj):
         # Use prefetched items to avoid extra queries.
         # list() materializes the prefetch cache so we never hit the DB again.
         items = list(obj.items.all())
+        active_promos = self.context.get('active_promos')
         total = Decimal('0.00')
         for item in items:
-            price = item.variant.price if item.variant else item.product.base_price
-            total += price * item.quantity
+            promo = get_active_promo_for_product(
+                item.product, active_promos=active_promos
+            )
+            total += effective_unit_price(item.product, item.variant, promo) * item.quantity
         return str(total)
 
     def get_item_count(self, obj):

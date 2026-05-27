@@ -1,6 +1,3 @@
-from decimal import Decimal
-
-from django.utils import timezone
 from rest_framework import serializers
 
 from products.models import (
@@ -10,98 +7,36 @@ from products.models import (
     VariantOption,
     VariantType,
 )
+from products.pricing import (
+    effective_unit_price,
+    get_active_promo_for_product,
+)
 
-
-def _get_active_promo_for_product(product, active_promos=None):
-    """
-    Return the highest-priority active Promocion that applies to this product
-    (via product M2M, category M2M, or aplica_a_todo).
-    Returns None if no active promotion applies.
-
-    If active_promos is provided (prefetched list), checks in-memory instead of
-    hitting the DB. The list must already be sorted by -prioridad.
-    """
-    if active_promos is not None:
-        # In-memory lookup using prefetched promos (avoids N+1)
-        product_id = product.pk
-        category_id = product.category_id
-
-        best_product_promo = None
-        best_category_promo = None
-        best_global_promo = None
-
-        for promo in active_promos:
-            # Check product-specific match (prefetched M2M)
-            if not best_product_promo:
-                promo_product_ids = {p.pk for p in promo.productos.all()}
-                if product_id in promo_product_ids:
-                    best_product_promo = promo
-
-            # Check category match (prefetched M2M)
-            if not best_category_promo and category_id:
-                promo_category_ids = {c.pk for c in promo.categorias.all()}
-                if category_id in promo_category_ids:
-                    best_category_promo = promo
-
-            # Check store-wide match
-            if not best_global_promo and promo.aplica_a_todo:
-                best_global_promo = promo
-
-            # Early exit if we found the highest-priority match type
-            if best_product_promo and best_category_promo and best_global_promo:
-                break
-
-        # Priority: product-specific > category > global
-        return best_product_promo or best_category_promo or best_global_promo
-
-    # Fallback: DB queries (used when context is not available)
-    try:
-        from marketing.models import Promocion
-    except ImportError:
-        return None
-
-    now = timezone.now()
-    base_qs = Promocion.objects.filter(
-        es_activo=True,
-        fecha_inicio__lte=now,
-        fecha_fin__gte=now,
-    ).order_by('-prioridad')
-
-    # Check product-specific promos
-    promo = base_qs.filter(productos=product).first()
-    if promo:
-        return promo
-
-    # Check category promos
-    if product.category_id:
-        promo = base_qs.filter(categorias=product.category_id).first()
-        if promo:
-            return promo
-
-    # Check store-wide promos
-    return base_qs.filter(aplica_a_todo=True).first()
+# Re-exported for backwards compatibility — the single implementation now
+# lives in products/pricing.py.
+_get_active_promo_for_product = get_active_promo_for_product
 
 
 def _calculate_precio_promocion(product, promo):
     """
-    Calculate the discounted price for a product given an active promotion.
-    Returns the discounted price as a Decimal, or None if not applicable.
+    Calculate the discounted display price for a PRODUCT (no variant) given an
+    active promotion. Returns the discounted price as a Decimal, or ``None``
+    when the promo does not produce a per-unit reduction (no promo, or a
+    COMPRA_X_LLEVA_Y promo) so the product page keeps showing the base price.
+
+    Thin wrapper over the shared variant-aware ``effective_unit_price`` so there
+    is a single discount implementation.
     """
     if promo is None:
         return None
 
     from marketing.models import Promocion
 
-    base = product.base_price
-    tipo = promo.tipo
+    if promo.tipo not in (Promocion.Tipo.PORCENTAJE, Promocion.Tipo.MONTO_FIJO):
+        # COMPRA_X_LLEVA_Y doesn't reduce the per-unit price directly.
+        return None
 
-    if tipo == Promocion.Tipo.PORCENTAJE:
-        discount = (base * promo.valor_descuento / Decimal('100')).quantize(Decimal('0.01'))
-        return max(base - discount, Decimal('0.00'))
-    elif tipo == Promocion.Tipo.MONTO_FIJO:
-        return max(base - promo.valor_descuento, Decimal('0.00'))
-    # COMPRA_X_LLEVA_Y doesn't reduce the per-unit price directly.
-    return None
+    return effective_unit_price(product, None, promo)
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
