@@ -6,7 +6,6 @@ from orders.views.cart import (
     ClearCartView,
 )
 from orders.views.orders import (
-    CheckoutView,
     OrderListView,
     OrderDetailView,
     AdminOrderListView,

@@ -349,6 +349,7 @@ def create_payment(
     payer_id_type: str,
     payer_id_number: str,
     device_id: str | None = None,
+    metadata_extra: dict | None = None,
 ) -> dict:
     """Charge an MP card token for an order (synchronous, authoritative).
 
@@ -418,6 +419,11 @@ def create_payment(
             'project': 'qlca',
         },
     }
+    # Order-on-payment flow: the caller charges a CheckoutSession (not an
+    # Order). ``metadata_extra`` carries ``session_uuid`` so the webhook can
+    # locate the session and create the order on approval.
+    if metadata_extra:
+        payload['metadata'].update(metadata_extra)
     # Issuer + identification are optional in MP's schema but the Brick
     # always provides them; include them when present.
     if issuer_id:

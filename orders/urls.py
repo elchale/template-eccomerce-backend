@@ -16,7 +16,6 @@ from orders.views.orders import (
     AdminOrderListView,
     AdminOrderRefundView,
     AdminOrderStatusUpdateView,
-    CheckoutView,
     OrderDetailView,
     OrderListView,
 )
@@ -24,6 +23,7 @@ from orders.views.analytics import DashboardView
 from orders.views_payment import create_izipay_token, verify_izipay_payment, izipay_ipn
 from orders.views_culqi import create_culqi_charge, create_culqi_order, culqi_webhook
 from orders.views_mp import create_mp_payment
+from orders.views_checkout import checkout_pay, checkout_session_status
 
 urlpatterns = [
     # Cart
@@ -34,8 +34,14 @@ urlpatterns = [
     path('api/cart/clear/', ClearCartView.as_view(), name='cart-clear'),
     path('api/cart/merge/', MergeCartView.as_view(), name='cart-merge'),
 
-    # Checkout
-    path('api/checkout/', CheckoutView.as_view(), name='checkout'),
+    # Checkout — order-on-payment (MP only). The Order is created ONLY when
+    # the payment is confirmed; the cart is the durable pre-order state.
+    path('api/checkout/pay/', checkout_pay, name='checkout-pay'),
+    path(
+        'api/checkout/session/<uuid:session_uuid>/status/',
+        checkout_session_status,
+        name='checkout-session-status',
+    ),
 
     # Customer orders
     path('api/orders/', OrderListView.as_view(), name='order-list'),

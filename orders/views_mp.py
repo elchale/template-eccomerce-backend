@@ -367,6 +367,23 @@ def _find_order(metadata: dict) -> Order | None:
     return None
 
 
+def _find_session(metadata: dict):
+    """Locate the CheckoutSession an MP payment belongs to (order-on-payment).
+
+    Matches by ``metadata.session_uuid``, self-filtering by project tag exactly
+    like ``_find_order``. Returns None for sibling-project events or a miss.
+    """
+    from orders.models import CheckoutSession
+
+    metadata = metadata or {}
+    if metadata.get('project') and metadata.get('project') != 'qlca':
+        return None
+    session_uuid = metadata.get('session_uuid')
+    if not session_uuid:
+        return None
+    return CheckoutSession.objects.filter(uuid=session_uuid).first()
+
+
 def _handle_payment_event(payment_id: str, *, source_ip: str, raw_body: str) -> None:
     """Process a payment.* webhook event by re-fetching the payment from MP."""
     if not payment_id:
@@ -375,6 +392,38 @@ def _handle_payment_event(payment_id: str, *, source_ip: str, raw_body: str) -> 
     payment = read_payment(payment_id)
     metadata = payment.get('metadata') or {}
     status_value = (payment.get('status') or '').lower()
+
+    # Order-on-payment: a payment tagged with a session_uuid creates the Order
+    # from the CheckoutSession (idempotent — covers device-died + 3DS resolve).
+    session = _find_session(metadata)
+    if session is not None:
+        from orders.views_checkout import create_order_from_session
+
+        if status_value != 'approved':
+            logger.info(
+                'Mercado Pago webhook: session payment %s status=%s, no action',
+                payment_id, status_value,
+            )
+            _log_ipn_event(
+                source_ip, payment_id, '', status_value, 'no_op', raw_body,
+                f'session {session.uuid} not approved',
+            )
+            return
+        if not session.mp_payment_id:
+            session.mp_payment_id = payment_id
+            session.save(update_fields=['mp_payment_id', 'updated'])
+        already_paid = session.order_id is not None
+        order = create_order_from_session(session)
+        if order is None:
+            outcome, detail = 'no_op', f'session {session.uuid} stock-out refunded'
+            order_number = ''
+        else:
+            outcome = 'duplicate' if already_paid else 'paid'
+            order_number = order.order_number
+        _log_ipn_event(
+            source_ip, payment_id, order_number, status_value, outcome, raw_body,
+        )
+        return
 
     order = _find_order(metadata)
     if order is None:

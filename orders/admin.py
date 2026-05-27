@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from orders.models import Cart, CartItem, EmailLog, IpnEvent, Order, OrderItem, OrderStatusHistory, Payment
+from orders.models import (
+    Cart,
+    CartItem,
+    CheckoutSession,
+    EmailLog,
+    IpnEvent,
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    Payment,
+)
 
 
 class OrderItemInline(admin.TabularInline):
@@ -131,6 +141,36 @@ class IpnEventAdmin(admin.ModelAdmin):
     readonly_fields = [
         'gateway', 'source_ip', 'kr_hash_prefix', 'order_number', 'order_status',
         'processed_outcome', 'raw_body', 'error_detail', 'created', 'updated',
+    ]
+    ordering = ['-created']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CheckoutSession)
+class CheckoutSessionAdmin(admin.ModelAdmin):
+    """Read-only view of payment attempts (order-on-payment flow).
+
+    An Order is created ONLY when a session reaches status='paid'. Useful for
+    forensics on failed/abandoned attempts and stock-out refunds.
+    """
+    list_display = [
+        'uuid', 'user', 'status', 'total', 'gateway', 'mp_payment_id',
+        'order', 'created',
+    ]
+    list_filter = ['status', 'gateway', 'created']
+    search_fields = ['uuid', 'mp_payment_id', 'email', 'user__email']
+    readonly_fields = [
+        'uuid', 'user', 'status', 'email', 'phone', 'shipping_address',
+        'billing_address', 'notes', 'coupon', 'subtotal', 'discount_amount',
+        'total', 'items', 'gateway', 'mp_payment_id', 'order', 'created', 'updated',
     ]
     ordering = ['-created']
 

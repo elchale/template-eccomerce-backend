@@ -5,6 +5,7 @@ Regression guard for the original bug: promos were display-only and customers
 paid full price at checkout."""
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -172,23 +173,55 @@ class TestCartPromoPricing:
         assert data['items'][0]['unit_price'] == '100.00'
 
 
+@pytest.fixture
+def _mp_settings(settings):
+    settings.MERCADOPAGO_ACCESS_TOKEN = 'test-access-token'
+    settings.MERCADOPAGO_API_URL = 'https://api.mercadopago.com'
+    if 'testserver' not in settings.ALLOWED_HOSTS:
+        settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']
+
+
 @pytest.mark.django_db
+@pytest.mark.usefixtures('_mp_settings')
 class TestCheckoutPromoPricing:
-    def _checkout(self, user, **extra):
+    """Order-on-payment: promo/coupon pricing flows through the snapshot and
+    the Order that is created when the MP payment is approved.
+
+    The single MP HTTP call inside create_payment is mocked so the /pay
+    endpoint sees an approved payment and creates the order from the session.
+    """
+
+    def _approved_mp(self, total):
+        return {
+            'id': 70001,
+            'status': 'approved',
+            'status_detail': 'accredited',
+            'transaction_amount': float(total),
+        }
+
+    def _pay(self, user, expected_total=None, **extra):
         client = _auth_client(user)
         payload = {
             'shipping_address': 'Calle Falsa 123',
             'email': 'promo@test.com',
+            'token': 'tok_test',
+            'payment_method_id': 'visa',
+            'installments': 1,
         }
         payload.update(extra)
-        return client.post(reverse('checkout'), payload, format='json')
+        with patch('orders.mercadopago.requests.request') as mocked:
+            mocked.return_value.status_code = 200
+            mocked.return_value.json.return_value = self._approved_mp(
+                expected_total if expected_total is not None else 0
+            )
+            return client.post(reverse('checkout-pay'), payload, format='json')
 
     def test_percentage_promo_applies_to_order(self, user, product):
         _make_promo(Promocion.Tipo.PORCENTAJE, '10.00')
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, quantity=2)
 
-        resp = self._checkout(user)
+        resp = self._pay(user, expected_total=Decimal('180.00'))
         assert resp.status_code == 201
 
         order = Order.objects.get(pk=resp.data['id'])
@@ -202,7 +235,7 @@ class TestCheckoutPromoPricing:
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, quantity=2)
 
-        resp = self._checkout(user)
+        resp = self._pay(user, expected_total=Decimal('200.00'))
         assert resp.status_code == 201
         order = Order.objects.get(pk=resp.data['id'])
         assert order.subtotal == Decimal('200.00')
@@ -217,7 +250,7 @@ class TestCheckoutPromoPricing:
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, variant=variant, quantity=1)
 
-        resp = self._checkout(user)
+        resp = self._pay(user, expected_total=Decimal('180.00'))
         assert resp.status_code == 201
         order = Order.objects.get(pk=resp.data['id'])
         assert order.total == Decimal('180.00')
@@ -228,7 +261,7 @@ class TestCheckoutPromoPricing:
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, quantity=1)
 
-        resp = self._checkout(user)
+        resp = self._pay(user, expected_total=Decimal('70.00'))
         order = Order.objects.get(pk=resp.data['id'])
         assert order.items.first().price == Decimal('70.00')
         assert order.total == Decimal('70.00')
@@ -248,7 +281,7 @@ class TestCheckoutPromoPricing:
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, quantity=2)
 
-        resp = self._checkout(user, coupon_code='HALF')
+        resp = self._pay(user, expected_total=Decimal('90.00'), coupon_code='HALF')
         assert resp.status_code == 201
         order = Order.objects.get(pk=resp.data['id'])
         assert order.subtotal == Decimal('180.00')
@@ -271,7 +304,7 @@ class TestCheckoutPromoPricing:
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, quantity=1)
 
-        resp = self._checkout(user, coupon_code='MIN95')
+        resp = self._pay(user, coupon_code='MIN95')
         assert resp.status_code == 400
         assert 'detail' in resp.data
 
@@ -280,7 +313,7 @@ class TestCheckoutPromoPricing:
         cart = Cart.objects.create(user=user)
         CartItem.objects.create(cart=cart, product=product, quantity=1)
 
-        resp = self._checkout(user)
+        resp = self._pay(user, expected_total=Decimal('100.00'))
         order = Order.objects.get(pk=resp.data['id'])
         assert order.total == Decimal('100.00')
         assert order.items.first().price == Decimal('100.00')

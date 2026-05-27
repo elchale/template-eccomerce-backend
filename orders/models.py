@@ -343,6 +343,86 @@ class Payment(BaseModel):
         return f"Payment {self.id} for {self.order.order_number} [{self.get_status_display()}]"
 
 
+class CheckoutSession(BaseModel):
+    """A payment attempt for a user's cart — the durable pre-order state.
+
+    The Order is created ONLY when a payment is confirmed (approved). Until
+    then the cart is the source of truth and this row holds an *immutable
+    snapshot* of exactly what will be charged (so a mid-payment cart edit
+    cannot change the amount) plus the gateway-correlation handles.
+
+    Lifecycle:
+      processing → paid   (Order created from the snapshot — terminal-success)
+      processing → failed (payment rejected/cancelled, or stock-out at confirm)
+      processing → expired (reserved; abandoned attempts can be swept later)
+
+    ``uuid`` is sent to MP as ``external_reference`` / ``metadata.session_uuid``
+    so both the synchronous response and the webhook can locate the session.
+    Items are stored as a JSON snapshot (``items``) rather than child rows —
+    the snapshot is write-once and never queried relationally.
+    """
+
+    class Status(models.TextChoices):
+        PROCESSING = 'processing', 'En proceso'
+        PAID = 'paid', 'Pagado'
+        FAILED = 'failed', 'Fallido'
+        EXPIRED = 'expired', 'Expirado'
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='checkout_sessions',
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PROCESSING,
+        db_index=True,
+    )
+
+    # --- Immutable snapshot of what will be charged ---
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    shipping_address = models.TextField(blank=True)
+    billing_address = models.TextField(blank=True)
+    notes = models.TextField(max_length=2000, blank=True)
+    coupon = models.ForeignKey(
+        'coupons.Coupon',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Line items: list of dicts {product_id, variant_id, product_name,
+    # variant_info, unit_price (str, promo already applied), quantity, image_url}.
+    items = models.JSONField(default=list)
+
+    # --- Gateway correlation ---
+    gateway = models.CharField(max_length=20, default='mercadopago', blank=True)
+    mp_payment_id = models.CharField(max_length=100, default='', blank=True, db_index=True)
+    order = models.ForeignKey(
+        'Order',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='checkout_sessions',
+    )
+
+    class Meta:
+        ordering = ['-created']
+        indexes = [
+            models.Index(fields=['user', 'status', '-created'], name='cks_user_status_idx'),
+        ]
+        verbose_name = 'Checkout Session'
+        verbose_name_plural = 'Checkout Sessions'
+
+    def __str__(self):
+        return f"CheckoutSession {self.uuid} [{self.status}]"
+
+
 class EmailLog(BaseModel):
     """Persistent audit log for every order email dispatched.
 
