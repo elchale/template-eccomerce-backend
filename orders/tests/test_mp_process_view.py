@@ -168,6 +168,80 @@ def test_process_approved_marks_order_paid(pending_order, paid_user):
 # ---------------------------------------------------------------------------
 # device_id is forwarded as X-meli-session-id; missing one must not break it
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 3DS payload: create_payment carries three_d_secure_mode / capture / binary_mode
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_process_payload_carries_3ds_fields(pending_order, paid_user):
+    """The /v1/payments payload must enable 3DS (optional) and binary_mode=False."""
+    client = _auth_client(paid_user)
+    url = reverse('mercadopago-process')
+
+    mp_payment = {
+        'id': 901,
+        'status': 'approved',
+        'status_detail': 'accredited',
+        'transaction_amount': float(pending_order.total),
+    }
+
+    with patch('orders.mercadopago.requests.request') as mocked:
+        mocked.return_value.status_code = 200
+        mocked.return_value.json.return_value = mp_payment
+        client.post(url, _body(pending_order), format='json')
+
+    _args, kwargs = mocked.call_args
+    payload = kwargs['json']
+    assert payload['three_d_secure_mode'] == 'optional'
+    assert payload['capture'] is True
+    assert payload['binary_mode'] is False
+
+
+# ---------------------------------------------------------------------------
+# 3DS challenge: pending + pending_challenge → A3 shape, order NOT confirmed
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_process_pending_challenge_returns_a3_shape_and_does_not_confirm(pending_order, paid_user):
+    """status=pending / status_detail=pending_challenge returns the challenge
+    payload (A3 shape) and leaves the order unconfirmed/unpaid."""
+    client = _auth_client(paid_user)
+    url = reverse('mercadopago-process')
+
+    mp_payment = {
+        'id': 902,
+        'status': 'pending',
+        'status_detail': 'pending_challenge',
+        'transaction_amount': float(pending_order.total),
+        'three_ds_info': {
+            'external_resource_url': 'https://challenge.bank.example/3ds',
+            'creq': 'eyJjcmVxIjoiYWJjIn0=',
+        },
+    }
+
+    with patch('orders.mercadopago.requests.request') as mocked:
+        mocked.return_value.status_code = 200
+        mocked.return_value.json.return_value = mp_payment
+        response = client.post(url, _body(pending_order), format='json')
+
+    assert response.status_code == 200
+    data = response.json()
+    # Exactly the A3 shape — no 'paid', no raw MP body.
+    assert data['status'] == 'pending_challenge'
+    assert data['payment_id'] == '902'
+    assert data['three_ds'] == {
+        'external_resource_url': 'https://challenge.bank.example/3ds',
+        'creq': 'eyJjcmVxIjoiYWJjIn0=',
+    }
+    assert 'paid' not in data
+    # CRITICAL: the order must NOT be confirmed or marked paid.
+    pending_order.refresh_from_db()
+    assert pending_order.payment_status == 'unpaid'
+    assert pending_order.status == Order.Status.PENDING
+    # No verified Payment row created.
+    assert pending_order.payments.filter(status='verified').count() == 0
+    # The payment id was stashed so the webhook can correlate.
+    assert pending_order.mp_payment_id == '902'
+
+
 @pytest.mark.django_db
 def test_process_forwards_device_id_header(pending_order, paid_user):
     client = _auth_client(paid_user)

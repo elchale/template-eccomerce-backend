@@ -15,6 +15,7 @@ from orders.mercadopago import (
     _GENERIC_CODE,
     _GENERIC_MESSAGE,
     _STATUS_DETAIL_MAP,
+    extract_three_ds,
     resolve_status_detail,
     verify_webhook_signature,
 )
@@ -164,6 +165,60 @@ def test_resolve_status_detail_masks_fraud_reasons(fraud_code):
     # The raw MP code is never echoed.
     assert fraud_code not in message
     assert code == 'declined'
+
+
+# ---------------------------------------------------------------------------
+# 3DS status_detail codes (ADR A5) — masked, safe
+# ---------------------------------------------------------------------------
+def test_resolve_pending_challenge_is_safe_needs_action():
+    """pending_challenge maps to a safe needs_action message — no raw code."""
+    message, code = resolve_status_detail('pending_challenge')
+    assert code == 'needs_action'
+    assert 'pending_challenge' not in message
+    assert 'verificación de seguridad' in message.lower()
+
+
+def test_resolve_cc_rejected_3ds_challenge_is_masked_declined():
+    """cc_rejected_3ds_challenge maps to a safe declined message — no raw code."""
+    message, code = resolve_status_detail('cc_rejected_3ds_challenge')
+    assert code == 'declined'
+    assert 'cc_rejected_3ds_challenge' not in message
+    # Safe, non-leaking wording.
+    assert message
+    assert '3ds' not in message.lower()
+
+
+# ---------------------------------------------------------------------------
+# extract_three_ds — pulls only the challenge fields, no leakage
+# ---------------------------------------------------------------------------
+def test_extract_three_ds_returns_url_and_creq():
+    payment = {
+        'id': 1,
+        'status': 'pending',
+        'status_detail': 'pending_challenge',
+        'three_ds_info': {
+            'external_resource_url': 'https://challenge.bank.example/3ds',
+            'creq': 'eyJjcmVxIjoiYWJjIn0=',
+        },
+    }
+    out = extract_three_ds(payment)
+    assert out == {
+        'external_resource_url': 'https://challenge.bank.example/3ds',
+        'creq': 'eyJjcmVxIjoiYWJjIn0=',
+    }
+
+
+def test_extract_three_ds_missing_info_returns_empty():
+    assert extract_three_ds({'id': 1, 'status': 'approved'}) == {}
+    assert extract_three_ds({'three_ds_info': None}) == {}
+    assert extract_three_ds({}) == {}
+
+
+def test_extract_three_ds_omits_blank_fields():
+    payment = {'three_ds_info': {'external_resource_url': 'https://x/3ds', 'creq': ''}}
+    out = extract_three_ds(payment)
+    assert out == {'external_resource_url': 'https://x/3ds'}
+    assert 'creq' not in out
 
 
 def test_verify_webhook_signature_normalises_alphanumeric_id():

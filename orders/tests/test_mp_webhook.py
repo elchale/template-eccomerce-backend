@@ -199,6 +199,95 @@ def test_mp_webhook_duplicate_event_is_no_op(pending_order):
 
 
 # ---------------------------------------------------------------------------
+# 3DS challenge → approved: confirms EXACTLY once even with process-view +
+# webhook (and a replayed webhook) all racing.
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_mp_3ds_challenge_then_approved_confirms_exactly_once(pending_order, paid_user):
+    """Full 3DS flow idempotency:
+    1. /process/ returns pending_challenge → order stays unconfirmed.
+    2. Webhook delivers the resolved 'approved' payment → confirms once.
+    3. A replayed webhook (and frontend re-query) cannot double-confirm,
+       double-clear the cart, or duplicate the Payment / IpnEvent(paid) rows.
+    """
+    from rest_framework.test import APIClient
+
+    payment_id = '33445566'
+
+    # --- Step 1: process-view gets a pending_challenge (no confirmation) ---
+    api = APIClient()
+    api.force_authenticate(user=paid_user)
+    process_url = reverse('mercadopago-process')
+    challenge_payment = {
+        'id': int(payment_id),
+        'status': 'pending',
+        'status_detail': 'pending_challenge',
+        'transaction_amount': float(pending_order.total),
+        'three_ds_info': {
+            'external_resource_url': 'https://challenge.bank.example/3ds',
+            'creq': 'creq-blob',
+        },
+    }
+    with patch('orders.mercadopago.requests.request') as mocked:
+        mocked.return_value.status_code = 200
+        mocked.return_value.json.return_value = challenge_payment
+        resp = api.post(
+            process_url,
+            {
+                'order_number': pending_order.order_number,
+                'token': 'tok_test',
+                'payment_method_id': 'master',
+                'installments': 1,
+                'payer': {'email': pending_order.email},
+            },
+            format='json',
+        )
+    assert resp.status_code == 200
+    assert resp.json()['status'] == 'pending_challenge'
+    pending_order.refresh_from_db()
+    assert pending_order.payment_status == 'unpaid'
+    assert pending_order.status == Order.Status.PENDING
+
+    # --- Step 2 + 3: webhook delivers approved twice (replay) ---
+    client = Client()
+    webhook_url = reverse('mercadopago-webhook')
+    body = _payment_payload(payment_id)
+    headers = _signed_headers(payment_id)
+    approved_payment = {
+        'id': int(payment_id),
+        'status': 'approved',
+        'status_detail': 'accredited',
+        'transaction_amount': float(pending_order.total),
+        'metadata': {
+            'order_uuid': str(pending_order.uuid),
+            'order_number': pending_order.order_number,
+            'project': 'qlca',
+        },
+    }
+    with patch('orders.mercadopago.requests.request') as mocked:
+        mocked.return_value.status_code = 200
+        mocked.return_value.json.return_value = approved_payment
+        client.post(webhook_url, data=body, content_type='application/json', **headers)
+        client.post(webhook_url, data=body, content_type='application/json', **headers)
+
+    pending_order.refresh_from_db()
+    assert pending_order.payment_status == 'paid'
+    assert pending_order.status == Order.Status.CONFIRMED
+    # Exactly one Payment row despite challenge + two webhook deliveries.
+    assert Payment.objects.filter(
+        order=pending_order, method='mercadopago', transaction_id=payment_id,
+    ).count() == 1
+    # Exactly one IpnEvent(paid); the replay is logged as duplicate.
+    assert IpnEvent.objects.filter(
+        gateway='mercadopago', order_number=pending_order.order_number,
+        processed_outcome='paid',
+    ).count() == 1
+    assert IpnEvent.objects.filter(
+        gateway='mercadopago', processed_outcome='duplicate',
+    ).count() == 1
+
+
+# ---------------------------------------------------------------------------
 # Sibling project (metadata.project='imp') → no_order + IpnEvent(no_order)
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db

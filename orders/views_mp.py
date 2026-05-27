@@ -30,8 +30,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from orders.mercadopago import (
-    MercadoPagoError, create_payment, read_payment, resolve_status_detail,
-    verify_webhook_signature,
+    MercadoPagoError, create_payment, extract_three_ds, read_payment,
+    resolve_status_detail, verify_webhook_signature,
 )
 from orders.email_dispatch import dispatch_order_email
 from orders.models import Cart, IpnEvent, Order, OrderStatusHistory, Payment
@@ -256,6 +256,7 @@ def create_mp_payment(request):
         return Response({'detail': exc.user_message, 'code': exc.code}, status=402)
 
     status_value = (payment.get('status') or '').lower()
+    status_detail = (payment.get('status_detail') or '').lower()
     payment_id = str(payment.get('id', ''))
 
     if status_value == 'approved':
@@ -265,6 +266,27 @@ def create_mp_payment(request):
             'order_number': order.order_number,
             'payment_id': payment_id,
             'status': status_value,
+        })
+
+    # 3DS 2.0 challenge: MP returns status='pending' / status_detail=
+    # 'pending_challenge' with a three_ds_info block. We must NOT confirm the
+    # order here — the buyer still has to complete the bank challenge in the
+    # Status Screen Brick. Return the challenge payload (A3 shape) so the
+    # frontend can mount the Brick; the webhook (authoritative) confirms the
+    # order once the challenge resolves to approved. We stash the payment id so
+    # the webhook can correlate, but leave the order in its pre-payment state.
+    if status_value == 'pending' and status_detail == 'pending_challenge':
+        if payment_id and not order.mp_payment_id:
+            order.mp_payment_id = payment_id
+            order.save(update_fields=['mp_payment_id', 'updated'])
+        logger.info(
+            'Mercado Pago payment for order %s requires 3DS challenge (payment %s)',
+            order.order_number, payment_id,
+        )
+        return Response({
+            'status': 'pending_challenge',
+            'payment_id': payment_id,
+            'three_ds': extract_three_ds(payment),
         })
 
     if status_value in ('in_process', 'pending'):
@@ -290,7 +312,19 @@ def create_mp_payment(request):
         )
         return Response({'detail': message, 'code': code}, status=402)
 
-    # Any other (refunded / charged_back / cancelled / unknown) — leave the
+    if status_value == 'cancelled':
+        # A cancelled payment is terminal — most commonly an 'expired' 3DS
+        # challenge (the buyer did not finish in time). Surface a safe, masked
+        # message so the frontend can route to the error UI. NEVER echo the
+        # raw status_detail.
+        message, code = resolve_status_detail(payment.get('status_detail'))
+        logger.info(
+            'Mercado Pago payment for order %s cancelled (code=%s)',
+            order.order_number, code,
+        )
+        return Response({'detail': message, 'code': code}, status=402)
+
+    # Any other (refunded / charged_back / unknown) — leave the
     # order pending; webhook is authoritative.
     logger.warning(
         'Mercado Pago payment for order %s returned unhandled status=%s',

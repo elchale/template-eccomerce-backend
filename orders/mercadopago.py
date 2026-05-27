@@ -37,6 +37,7 @@ _STATUS_DETAIL_MAP: dict[str, tuple[str, str]] = {
     'pending_review_manual': ('Estamos revisando tu pago. Te confirmaremos por correo dentro de 2 días hábiles.', 'pending_review'),
     'pending_waiting_payment': ('Estamos esperando la confirmación de tu pago.', 'processing'),
     'pending_challenge': ('Completa la verificación de seguridad de tu banco para confirmar el pago.', 'needs_action'),
+    'expired': ('Expiró la verificación de seguridad. Vuelve a intentar el pago.', 'declined'),
     # fixable card-data errors (keep the form open so the user can correct)
     'cc_rejected_bad_filled_card_number': ('Revisa el número de tarjeta e intenta de nuevo.', 'card_data_invalid'),
     'cc_rejected_bad_filled_date': ('Revisa la fecha de vencimiento de la tarjeta.', 'card_data_invalid'),
@@ -53,6 +54,7 @@ _STATUS_DETAIL_MAP: dict[str, tuple[str, str]] = {
     'cc_rejected_max_attempts': ('Alcanzaste el límite de intentos. Usa otra tarjeta o intenta más tarde.', 'max_attempts'),
     'cc_rejected_other_reason': ('Tu banco rechazó el pago. Intenta con otra tarjeta o comunícate con tu banco.', 'declined'),
     'cc_rejected_3ds_mandatory': ('Debes completar la verificación de seguridad (3DS) de tu banco para continuar.', 'needs_action'),
+    'cc_rejected_3ds_challenge': ('No pudimos validar la verificación de seguridad de tu banco. Intenta de nuevo o usa otra tarjeta.', 'declined'),
     'cc_amount_rate_limit_exceeded': ('El monto supera el límite de tu tarjeta. Intenta con otra.', 'declined'),
     'rejected_by_bank': ('Tu banco rechazó la transacción. Comunícate con tu banco para más detalles.', 'declined'),
     'rejected_by_regulations': ('No pudimos procesar este pago. Intenta con otro medio de pago.', 'declined'),
@@ -75,6 +77,31 @@ def resolve_status_detail(status_detail: str | None) -> tuple[str, str]:
     if status_detail and status_detail in _STATUS_DETAIL_MAP:
         return _STATUS_DETAIL_MAP[status_detail]
     return (_GENERIC_MESSAGE, _GENERIC_CODE)
+
+
+def extract_three_ds(payment: dict) -> dict:
+    """Pull the 3DS challenge fields from an MP payment response.
+
+    When MP runs a 3DS challenge the payment comes back as
+    ``status='pending'`` / ``status_detail='pending_challenge'`` with a
+    ``three_ds_info`` object carrying the bank challenge URL and the ``creq``
+    blob the Status Screen Brick needs to mount the challenge.
+
+    Returns ``{'external_resource_url': ..., 'creq': ...}`` with only the
+    real, non-empty values present (empty dict when there is no challenge
+    info). No raw MP body or secrets are surfaced.
+    """
+    info = (payment or {}).get('three_ds_info') or {}
+    if not isinstance(info, dict):
+        return {}
+    out: dict = {}
+    url = (info.get('external_resource_url') or '').strip() if isinstance(info.get('external_resource_url'), str) else info.get('external_resource_url')
+    creq = (info.get('creq') or '').strip() if isinstance(info.get('creq'), str) else info.get('creq')
+    if url:
+        out['external_resource_url'] = url
+    if creq:
+        out['creq'] = creq
+    return out
 
 
 class MercadoPagoError(Exception):
@@ -192,6 +219,49 @@ def _customer_names(order) -> tuple[str, str]:
     return (getattr(user, 'first_name', '') or '')[:50], (getattr(user, 'last_name', '') or '')[:50]
 
 
+def _item_category_id(item) -> str:
+    """Real MP category_id for an order line, or '' when absent.
+
+    We map the product's category slug (a stable, human-readable id) when the
+    product still has a category. No placeholder — an item with no category
+    simply omits the field.
+    """
+    product = getattr(item, 'product', None)
+    if not product:
+        return ''
+    category = getattr(product, 'category', None)
+    if not category:
+        return ''
+    return (getattr(category, 'slug', '') or '').strip()[:256]
+
+
+def _item_picture_url(item) -> str:
+    """Real product image URL for an order line, or '' when absent.
+
+    Prefers the image snapshot denormalised onto the OrderItem (``image_url``).
+    Falls back to the product's primary/first image when the snapshot is
+    blank. No placeholder — returns '' when no real URL exists.
+    """
+    snapshot = (getattr(item, 'image_url', '') or '').strip()
+    if snapshot:
+        return snapshot[:600]
+    product = getattr(item, 'product', None)
+    if not product:
+        return ''
+    # The related manager exists even if the FK was nulled (SET_NULL) — guard.
+    try:
+        images = product.images.all()
+    except Exception:  # noqa: BLE001 — never let enrichment break a payment
+        return ''
+    primary = next((img for img in images if getattr(img, 'is_primary', False)), None)
+    chosen = primary or (images[0] if images else None)
+    if chosen:
+        url = (getattr(chosen, 'image_url', '') or '').strip()
+        if url:
+            return url[:600]
+    return ''
+
+
 def _build_additional_info(order) -> dict:
     """Build MP ``additional_info`` from real order data for antifraud scoring.
 
@@ -202,7 +272,10 @@ def _build_additional_info(order) -> dict:
     info: dict = {}
 
     items = []
-    for item in order.items.all():
+    # select_related on the product (and its category) avoids an N+1 when we
+    # read category_id / images for each line item.
+    item_qs = order.items.select_related('product', 'product__category')
+    for item in item_qs:
         entry: dict = {
             'id': str(item.product_id or item.id),
             'title': (item.product_name or '')[:256],
@@ -211,6 +284,14 @@ def _build_additional_info(order) -> dict:
         }
         if item.variant_info:
             entry['description'] = item.variant_info[:256]
+        # category_id and picture_url from the related product — improves MP
+        # antifraud scoring. Both omitted when genuinely absent (no placeholders).
+        category_id = _item_category_id(item)
+        if category_id:
+            entry['category_id'] = category_id
+        picture_url = _item_picture_url(item)
+        if picture_url:
+            entry['picture_url'] = picture_url
         items.append(entry)
     if items:
         info['items'] = items
@@ -232,8 +313,10 @@ def _build_additional_info(order) -> dict:
         info['payer'] = payer
 
     # shipments.receiver_address — only when the order carries a real shipping
-    # address. The Order model stores it as free text, so we map the fields we
-    # can confidently extract (zip omitted when blank, etc.).
+    # address. The eccomerce Order stores the address as a single free-text
+    # field (no structured zip/street_number/city/state columns), so the only
+    # value we can send WITHOUT fabricating data is the full address as
+    # street_name. Per the no-placeholder rule we never invent zip/city/state.
     shipping = (getattr(order, 'shipping_address', '') or '').strip()
     if shipping:
         receiver: dict = {'street_name': shipping[:256]}
@@ -320,6 +403,15 @@ def create_payment(
         'payer': payer,
         'external_reference': f'qlca-{order.uuid}',
         'statement_descriptor': 'QOLCA',
+        # 3DS 2.0: 'optional' lets MP run a bank challenge only on higher-risk
+        # transactions (cuts cc_rejected_high_risk without friction on safe ones).
+        # 'binary_mode': False is REQUIRED so the payment may legitimately sit at
+        # 'pending'/'pending_challenge' while the buyer completes the challenge —
+        # the view must therefore stop treating 'pending' as terminal failure.
+        # 'capture': True keeps one-step capture on approval (current behaviour).
+        'three_d_secure_mode': 'optional',
+        'capture': True,
+        'binary_mode': False,
         'metadata': {
             'order_number': order.order_number,
             'order_uuid': str(order.uuid),
