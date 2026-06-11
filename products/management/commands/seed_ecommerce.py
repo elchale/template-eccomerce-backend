@@ -156,7 +156,7 @@ class Command(BaseCommand):
                 'images': [
                     ('https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800&q=80', 'iPhone 15 Pro Max front view'),
                     ('https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?w=800&q=80', 'iPhone side angle'),
-                    ('https://images.unsplash.com/photo-1591337676887-a217a6c6bff3?w=800&q=80', 'iPhone camera detail'),
+                    ('https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?w=800&q=80', 'iPhone camera detail'),
                 ],
                 'variants': [
                     {'sku': 'IPHONE-15PM-256-BLK', 'price': '1199.00', 'stock': 30, 'options': [storages['256GB'], colors['Black']]},
@@ -241,7 +241,7 @@ class Command(BaseCommand):
                 'is_featured': True,
                 'images': [
                     ('https://images.unsplash.com/photo-1606220945770-b5b6c2c55bf1?w=800&q=80', 'AirPods Pro in case'),
-                    ('https://images.unsplash.com/photo-1588423771073-b8903fde1c68?w=800&q=80', 'AirPods Pro detail'),
+                    ('https://images.unsplash.com/photo-1583394838336-acd977736f90?w=800&q=80', 'AirPods Pro detail'),
                 ],
                 'variants': [],
             },
@@ -258,7 +258,7 @@ class Command(BaseCommand):
                 'stock': 45,
                 'is_featured': True,
                 'images': [
-                    ('https://images.unsplash.com/photo-1546868871-af0de0ae72be?w=800&q=80', 'Apple Watch Ultra on wrist'),
+                    ('https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80', 'Apple Watch Ultra on wrist'),
                     ('https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80', 'Smart watch product shot'),
                 ],
                 'variants': [],
@@ -276,7 +276,7 @@ class Command(BaseCommand):
                 'stock': 180,
                 'is_featured': True,
                 'images': [
-                    ('https://images.unsplash.com/photo-1614975059251-992f11792571?w=800&q=80', 'Merino wool sweater navy'),
+                    ('https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=800&q=80', 'Merino wool sweater navy'),
                     ('https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=800&q=80', 'Sweater detail texture'),
                 ],
                 'variants': [
@@ -409,7 +409,7 @@ class Command(BaseCommand):
                 'is_featured': True,
                 'images': [
                     ('https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800&q=80', 'Pour-over coffee set'),
-                    ('https://images.unsplash.com/photo-1514432324607-a09d9b4aefda?w=800&q=80', 'Coffee set detail'),
+                    ('https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800&q=80', 'Coffee set detail'),
                 ],
                 'variants': [
                     {'sku': 'COFFEE-WHT', 'price': '84.00', 'stock': 30, 'options': [colors['White']]},
@@ -491,7 +491,7 @@ class Command(BaseCommand):
                 'stock': 110,
                 'is_featured': False,
                 'images': [
-                    ('https://images.unsplash.com/photo-1507473885765-e6ed057ab6fe?w=800&q=80', 'Desk lamp on table'),
+                    ('https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=800&q=80', 'Desk lamp on table'),
                     ('https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=800&q=80', 'Desk lamp workspace'),
                 ],
                 'variants': [
