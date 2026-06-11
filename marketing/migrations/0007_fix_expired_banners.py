@@ -57,11 +57,13 @@ def fix_banners(apps, schema_editor):
 
     now = timezone.now()
     start = now - timedelta(days=1)
+    far_future = now + timedelta(days=3650)
 
-    # Clear expiry on all existing marketing content
+    # Clear expiry on banners/popups (nullable fecha_fin)
     Banner.objects.all().update(fecha_fin=None, es_activo=True)
     Popup.objects.all().update(fecha_fin=None, es_activo=True)
-    Promocion.objects.all().update(fecha_fin=None, es_activo=True)
+    # Promocion.fecha_fin is NOT NULL — use a far-future date instead
+    Promocion.objects.all().update(fecha_fin=far_future, es_activo=True)
 
     # Create seed banners if they don't exist
     for data in BANNERS:
