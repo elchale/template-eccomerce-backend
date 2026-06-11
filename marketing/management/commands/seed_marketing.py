@@ -12,7 +12,6 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         now = timezone.now()
         start = now - timedelta(days=1)
-        end = now + timedelta(days=30)
 
         banners = [
             {
@@ -64,7 +63,7 @@ class Command(BaseCommand):
                     **data,
                     'es_activo': True,
                     'fecha_inicio': start,
-                    'fecha_fin': end,
+                    'fecha_fin': None,
                 },
             )
             if created:
@@ -105,7 +104,7 @@ class Command(BaseCommand):
                     **data,
                     'es_activo': True,
                     'fecha_inicio': start,
-                    'fecha_fin': end,
+                    'fecha_fin': None,
                 },
             )
             if created:
@@ -151,7 +150,7 @@ class Command(BaseCommand):
                     **data,
                     'es_activo': True,
                     'fecha_inicio': start,
-                    'fecha_fin': end,
+                    'fecha_fin': None,
                 },
             )
             if created:
