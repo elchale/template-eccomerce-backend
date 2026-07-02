@@ -287,3 +287,10 @@ Detailed production guidance: see [PRODUCTION.md](PRODUCTION.md) and [PRE_LAUNCH
 ## License
 
 MIT — use this as a starting point for any project, commercial or otherwise.
+
+## Maintained by
+
+This template is built and maintained by **[Qolca](https://www.qolca.org)** — a software & AI automation studio in Lima, Peru. We use it as the foundation for client storefronts.
+
+- Don't want to self-host? We run it for you: **[managed store from $10/month](https://www.qolca.org/solutions/self-hosted-ecommerce-template)** ([español](https://www.qolca.org/es/soluciones/plantilla-ecommerce-autohospedada) · [português](https://www.qolca.org/pt/solucoes/modelo-ecommerce-auto-hospedado))
+- More automation guides on the [Qolca blog](https://www.qolca.org/blog)
